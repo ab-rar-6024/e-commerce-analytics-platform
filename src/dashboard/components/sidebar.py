@@ -5,7 +5,7 @@ This module provides the main navigation sidebar with page selection,
 user information, and system status indicators.
 """
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Optional
 
 import streamlit as st
@@ -115,23 +115,58 @@ def render_page_navigation() -> str:
     return selected_page
 
 
+def _quick_range_dates(time_range: str):
+    """Return (start, end) dates for a quick-select range, or None for "Custom"."""
+    today = datetime.now().date()
+    if time_range == "Last 7 days":
+        return today - timedelta(days=7), today
+    if time_range == "Last 30 days":
+        return today - timedelta(days=30), today
+    if time_range == "Last 90 days":
+        return today - timedelta(days=90), today
+    if time_range == "Year to date":
+        return today.replace(month=1, day=1), today
+    return None
+
+
+def _apply_quick_range():
+    """Callback: copy the selected quick range into the date inputs.
+
+    Streamlit only allows changing a widget's session-state value before the
+    widget is created, which is the case for callbacks (they run first on rerun).
+    """
+    dates = _quick_range_dates(st.session_state.global_time_range)
+    if dates:
+        st.session_state.global_start_date, st.session_state.global_end_date = dates
+
+
+def _mark_custom_range():
+    """Callback: a manually edited date means the range is no longer a preset."""
+    st.session_state.global_time_range = "Custom"
+
+
 def render_filters_section():
     """Render common filters section."""
     st.sidebar.markdown("---")
     st.sidebar.markdown("### 🔍 Filters")
 
+    # Seed the date inputs from the default quick range on first load
+    if "global_start_date" not in st.session_state:
+        (
+            st.session_state.global_start_date,
+            st.session_state.global_end_date,
+        ) = _quick_range_dates("Last 30 days")
+
     # Date range filter
     col1, col2 = st.sidebar.columns(2)
     with col1:
         start_date = st.date_input(
-            "Start Date",
-            value=datetime.now().date().replace(day=1),  # First day of current month
-            key="global_start_date",
+            "Start Date", key="global_start_date", on_change=_mark_custom_range
         )
 
     with col2:
         end_date = st.date_input(
-            "End Date", value=datetime.now().date(), key="global_end_date"
+            "End Date", key="global_end_date", on_change=_mark_custom_range
         )
 
     # Time range quick select
@@ -146,27 +181,8 @@ def render_filters_section():
         ],
         index=2,  # Default to "Last 30 days"
         key="global_time_range",
+        on_change=_apply_quick_range,
     )
-
-    # Update dates based on quick select
-    if time_range != "Custom":
-        today = datetime.now().date()
-        if time_range == "Last 7 days":
-            start_date = today - st.timedelta(days=7)
-            end_date = today
-        elif time_range == "Last 30 days":
-            start_date = today - st.timedelta(days=30)
-            end_date = today
-        elif time_range == "Last 90 days":
-            start_date = today - st.timedelta(days=90)
-            end_date = today
-        elif time_range == "Year to date":
-            start_date = today.replace(month=1, day=1)
-            end_date = today
-
-        # Update session state
-        st.session_state.global_start_date = start_date
-        st.session_state.global_end_date = end_date
 
     # Store filter values in session state
     st.session_state.filter_start_date = start_date
