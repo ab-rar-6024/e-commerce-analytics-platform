@@ -105,7 +105,9 @@ def login_form() -> bool:
                     )
 
                     # Authenticate with API
-                    if api_client.authenticate(username, password):
+                    if api_client.authenticate(
+                        settings.api_username, settings.api_password
+                    ):
                         st.session_state.api_client = api_client
                         st.success("Login successful! Redirecting...")
                         time.sleep(1)

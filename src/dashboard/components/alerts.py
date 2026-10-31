@@ -107,6 +107,23 @@ def render_system_alerts(system_data: Dict[str, Any]) -> None:
         )
 
 
+def _alert_counts_by_priority(alerts: Any) -> Dict[str, int]:
+    """Count fraud alerts per priority.
+
+    Accepts either a list of alert dicts or the API's aggregate dict
+    (``{"total": ..., "by_priority": {"critical": 2, ...}}``).
+    """
+    if isinstance(alerts, dict):
+        return alerts.get("by_priority", {})
+
+    counts: Dict[str, int] = {}
+    for alert in alerts or []:
+        if isinstance(alert, dict):
+            priority = alert.get("priority")
+            counts[priority] = counts.get(priority, 0) + 1
+    return counts
+
+
 def render_fraud_alerts(fraud_data: Dict[str, Any]) -> None:
     """
     Render fraud detection alerts.
@@ -117,8 +134,8 @@ def render_fraud_alerts(fraud_data: Dict[str, Any]) -> None:
     if not fraud_data:
         return
 
-    # Get summary data
-    summary = fraud_data.get("summary", {})
+    # Get summary data (the API calls it "overview")
+    summary = fraud_data.get("summary") or fraud_data.get("overview") or {}
     alerts = fraud_data.get("alerts", [])
 
     # High-level fraud alerts
@@ -146,19 +163,21 @@ def render_fraud_alerts(fraud_data: Dict[str, Any]) -> None:
         )
 
     # Critical priority alerts
-    critical_alerts = [a for a in alerts if a.get("priority") == "critical"]
-    if critical_alerts:
+    by_priority = _alert_counts_by_priority(alerts)
+
+    critical_count = by_priority.get("critical", 0)
+    if critical_count:
         render_alert(
-            f"🚨 {len(critical_alerts)} critical fraud alerts require immediate attention",
+            f"🚨 {critical_count} critical fraud alerts require immediate attention",
             "error",
             key="critical_fraud_alerts",
         )
 
     # High priority alerts
-    high_alerts = [a for a in alerts if a.get("priority") == "high"]
-    if high_alerts:
+    high_count = by_priority.get("high", 0)
+    if high_count:
         render_alert(
-            f"⚠️ {len(high_alerts)} high priority fraud alerts pending",
+            f"⚠️ {high_count} high priority fraud alerts pending",
             "warning",
             key="high_fraud_alerts",
         )

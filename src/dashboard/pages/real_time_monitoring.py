@@ -171,7 +171,11 @@ def render_fraud_detection_alerts(fraud_data: Dict[str, Any]) -> None:
     col1, col2, col3, col4 = st.columns(4)
 
     with col1:
-        total_alerts = overview.get("total_alerts", 0)
+        alert_stats = fraud_data.get("alerts")
+        total_alerts = overview.get(
+            "total_alerts",
+            alert_stats.get("total", 0) if isinstance(alert_stats, dict) else 0,
+        )
         render_metric_card(
             title="Total Alerts",
             value=total_alerts,
@@ -211,8 +215,11 @@ def render_fraud_detection_alerts(fraud_data: Dict[str, Any]) -> None:
     # Fraud alerts table
     st.subheader("Recent Fraud Alerts")
 
-    # Extract alerts from fraud data
+    # Extract alerts from fraud data; the dashboard endpoint only returns
+    # aggregate counts (a dict), in which case there are no records to list
     alerts = fraud_data.get("alerts", [])
+    if isinstance(alerts, dict):
+        alerts = []
 
     if alerts:
         # Prepare alert data for table
@@ -243,7 +250,7 @@ def render_fraud_detection_alerts(fraud_data: Dict[str, Any]) -> None:
             use_container_width=True,
         )
     else:
-        st.info("No recent fraud alerts")
+        st.info("No individual alert records in this view (see Fraud Detection)")
 
 
 def render_system_performance(

@@ -318,6 +318,8 @@ class SmartCompressionResponse(JSONResponse):
             )
             # Set the body directly to avoid double JSON encoding
             self.body = optimized_content.encode("utf-8")
+            # The parent computed content-length from the placeholder body ("null")
+            self.headers["content-length"] = str(len(self.body))
         else:
             super().__init__(
                 content=content,

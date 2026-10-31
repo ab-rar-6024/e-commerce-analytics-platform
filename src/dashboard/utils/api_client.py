@@ -64,7 +64,7 @@ class APIClient:
         retry_strategy = Retry(
             total=self.retries,
             status_forcelist=[429, 500, 502, 503, 504],
-            method_whitelist=["HEAD", "GET", "OPTIONS"],
+            allowed_methods=["HEAD", "GET", "OPTIONS"],
             backoff_factor=1,
         )
 
@@ -115,7 +115,7 @@ class APIClient:
 
     def authenticate(self, username: str, password: str) -> bool:
         """
-        Authenticate with the API.
+        Authenticate with the API and store the access token.
 
         Args:
             username: Username for authentication
@@ -125,19 +125,20 @@ class APIClient:
             bool: True if authentication successful
         """
         try:
-            # For demo purposes, we'll simulate authentication
-            # In a real implementation, this would call the auth endpoint
-            auth_data = {"username": username, "password": password}
+            response = self.session.post(
+                f"{self.base_url}/api/v1/auth/login",
+                json={"username": username, "password": password},
+                timeout=self.timeout,
+            )
+            if response.status_code != 200:
+                return False
 
-            # Simulate successful authentication
-            if username and password:
-                self.auth_token = "demo_token_12345"
-                self.token_expires_at = time.time() + 3600  # 1 hour
-                return True
+            token = response.json()
+            self.auth_token = token["access_token"]
+            self.token_expires_at = time.time() + int(token.get("expires_in", 3600))
+            return True
 
-            return False
-
-        except Exception as e:
+        except (requests.RequestException, ValueError, KeyError) as e:
             st.error(f"Authentication failed: {str(e)}")
             return False
 

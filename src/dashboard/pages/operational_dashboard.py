@@ -95,19 +95,19 @@ def render_operational_overview(system_health: Dict[str, Any]) -> None:
 
     if overall_status == "healthy":
         render_notification_banner(
-            message="All systems operational", banner_type="success", icon="✅"
+            message="✅ All systems operational", notification_type="success"
         )
     elif overall_status == "degraded":
         render_notification_banner(
-            message="Some systems experiencing issues", banner_type="warning", icon="⚠️"
+            message="⚠️ Some systems experiencing issues", notification_type="warning"
         )
     elif overall_status == "critical":
         render_notification_banner(
-            message="Critical system issues detected", banner_type="error", icon="🚨"
+            message="🚨 Critical system issues detected", notification_type="error"
         )
     else:
         render_notification_banner(
-            message="System status unknown", banner_type="info", icon="❓"
+            message="❓ System status unknown", notification_type="info"
         )
 
     # Key operational metrics

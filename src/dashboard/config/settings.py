@@ -23,6 +23,9 @@ class DashboardSettings:
     auth_enabled: bool = True
     default_username: str = "admin"
     default_password: str = "admin123"
+    # Account the dashboard uses to call the API (the API's development user)
+    api_username: str = "admin"
+    api_password: str = "secret"
     session_timeout: int = 3600  # 1 hour
 
     # Dashboard Configuration
@@ -68,6 +71,8 @@ class DashboardSettings:
         )
         self.default_username = os.getenv("DASHBOARD_USERNAME", self.default_username)
         self.default_password = os.getenv("DASHBOARD_PASSWORD", self.default_password)
+        self.api_username = os.getenv("DASHBOARD_API_USERNAME", self.api_username)
+        self.api_password = os.getenv("DASHBOARD_API_PASSWORD", self.api_password)
 
         # Set default color palette if not provided
         if self.color_palette is None:

@@ -16,6 +16,7 @@ from .endpoints import (
     fraud,
     fraud_enhanced,
     health,
+    operations,
     realtime,
 )
 
@@ -42,6 +43,9 @@ api_router.include_router(fraud_enhanced.router, prefix="/fraud", tags=["fraud"]
 
 # Real-time metrics endpoints (system health, streaming, business KPIs)
 api_router.include_router(realtime.router, prefix="/realtime", tags=["real-time"])
+api_router.include_router(
+    operations.router, prefix="/operations", tags=["operations"]
+)
 
 # Cache management endpoints (statistics, invalidation, monitoring)
 api_router.include_router(cache_management.router, prefix="/cache", tags=["cache"])
