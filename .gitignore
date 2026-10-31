@@ -321,7 +321,8 @@ unittests.cfg
 webserver_config.py
 
 # Streamlit
-.streamlit/
+.streamlit/*
+!.streamlit/config.toml
 
 # FastAPI
 .fastapi/

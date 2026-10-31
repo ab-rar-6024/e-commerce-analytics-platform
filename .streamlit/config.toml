@@ -1,0 +1,7 @@
+[client]
+# The dashboard has its own navigation (after login); Streamlit's automatic list of
+# src/dashboard/pages/*.py would open those modules outside the login/layout flow.
+showSidebarNavigation = false
+
+[browser]
+gatherUsageStats = false
