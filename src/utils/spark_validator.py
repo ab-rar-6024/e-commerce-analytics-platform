@@ -36,7 +36,10 @@ def validate_spark_imports(file_path: Path) -> List[str]:
         # Validate common patterns
         if spark_imports:
             # Check for proper SparkSession usage
-            if "pyspark.sql" in spark_imports:
+            if any(
+                imp == "pyspark.sql" or imp.startswith("pyspark.sql.")
+                for imp in spark_imports
+            ):
                 if not any("SparkSession" in name for name in imported_names):
                     errors.append(
                         f"{file_path}: Consider importing SparkSession explicitly"

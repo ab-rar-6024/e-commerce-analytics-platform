@@ -225,7 +225,8 @@ class TestStreamingAnomalyDetector:
             assert rule.name is not None
             assert rule.description is not None
             assert isinstance(rule.anomaly_type, AnomalyType)
-            assert rule.threshold > 0
+            # zero_amount legitimately uses a threshold of 0.0
+            assert rule.threshold >= 0
 
     def test_detect_anomalies(self, anomaly_detector, mock_dataframe):
         """Test anomaly detection."""

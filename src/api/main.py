@@ -101,7 +101,12 @@ def create_application() -> FastAPI:
 
     # Add compression middleware (before CORS)
     compression_middleware = get_compression_middleware(app)
-    app.add_middleware(type(compression_middleware), app=app)
+    app.add_middleware(
+        type(compression_middleware),
+        minimum_size=compression_middleware.minimum_size,
+        compress_level=compression_middleware.compress_level,
+        excluded_media_types=compression_middleware.excluded_media_types,
+    )
 
     # Add metrics middleware (before correlation to track all requests)
     app.add_middleware(PrometheusMetricsMiddleware)

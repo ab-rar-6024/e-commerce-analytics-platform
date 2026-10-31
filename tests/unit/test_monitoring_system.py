@@ -16,7 +16,6 @@ from unittest.mock import Mock, patch
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from prometheus_client import REGISTRY
 
 from src.api.middleware.metrics_middleware import (
     PrometheusMetricsMiddleware,
@@ -34,13 +33,6 @@ from src.monitoring import ECAPTracing, record_exception, start_span
 
 class TestPrometheusMetrics:
     """Test Prometheus metrics collection."""
-
-    def setup_method(self):
-        """Set up test environment."""
-        # Clear Prometheus registry
-        for collector in list(REGISTRY._collector_to_names.keys()):
-            with contextlib.suppress(KeyError):
-                REGISTRY.unregister(collector)
 
     def test_metrics_middleware_initialization(self):
         """Test that metrics middleware initializes correctly."""

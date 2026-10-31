@@ -459,9 +459,12 @@ class TestPrivacyManager:
         assert request.status == "pending"
         assert request.details == "Please delete all my personal data"
 
+    @patch("src.data_governance.privacy.sha2")
+    @patch("src.data_governance.privacy.col")
     @patch("src.data_governance.privacy.SparkSession")
-    def test_anonymize_dataframe(self, mock_spark_session):
+    def test_anonymize_dataframe(self, mock_spark_session, mock_col, mock_sha2):
         """Test DataFrame anonymization."""
+        # col/sha2 need an active SparkContext; the DataFrame here is a mock
         # Mock DataFrame and its methods
         mock_df = Mock()
         mock_df.columns = ["user_id", "email", "name", "age"]
@@ -554,9 +557,11 @@ class TestDataQualityMonitor:
         assert rule.threshold == 0.95
         assert rule.enabled is True
 
+    @patch("src.data_governance.quality.col")
     @patch("src.data_governance.quality.SparkSession")
-    def test_completeness_check(self, mock_spark_session):
+    def test_completeness_check(self, mock_spark_session, mock_col):
         """Test completeness quality check."""
+        # col() needs an active SparkContext; the DataFrame here is a mock
         # Create a rule
         rule_id = self.quality_monitor.create_rule(
             name="Email Completeness",
@@ -677,7 +682,9 @@ class TestDataQualityMonitor:
         dashboard = self.quality_monitor.get_quality_dashboard("test_data")
 
         assert "overall_quality_score" in dashboard
-        assert dashboard["overall_quality_score"] == 0.9  # Average of 0.95 and 0.85
+        assert dashboard["overall_quality_score"] == pytest.approx(
+            0.9
+        )  # Average of 0.95 and 0.85
         assert dashboard["total_checks"] == 2
         assert dashboard["passed_checks"] == 1
         assert dashboard["failed_checks"] == 1

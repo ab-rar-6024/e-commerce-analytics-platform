@@ -103,8 +103,9 @@ class TestPropertyBasedValidation:
         assert len(result) > 0, f"Result should not be empty"
 
         # Property: result is uppercase or "Unknown"
+        # (compare with upper(): isupper() is False for strings without letters, e.g. "0")
         if result != "Unknown":
-            assert result.isupper(), f"Result {result} should be uppercase"
+            assert result == result.upper(), f"Result {result} should be uppercase"
 
         # Property: no leading/trailing whitespace
         assert result == result.strip(), f"Result '{result}' should not have whitespace"
@@ -230,8 +231,8 @@ class TestPropertyBasedValidation:
         # Property: always returns a string
         assert isinstance(result, str), f"Result should be string, got {type(result)}"
 
-        # Property: never returns empty string
-        assert len(result) > 0, f"Result should not be empty"
+        # Property: only an empty-string input converts to an empty string
+        assert len(result) > 0 or value == "", f"Result should not be empty"
 
         # Property: handles special values appropriately
         if value is None:

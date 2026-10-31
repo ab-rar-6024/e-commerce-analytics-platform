@@ -125,10 +125,19 @@ class StructuredLogger:
         return std_logger
 
     def _parse_size(self, size_str: str) -> int:
-        """Parse size string like '100MB' to bytes."""
-        units = {"B": 1, "KB": 1024, "MB": 1024**2, "GB": 1024**3}
-        size_str = size_str.upper()
+        """Parse size string like '100MB' or '100M' to bytes."""
+        units = {
+            "GB": 1024**3,
+            "MB": 1024**2,
+            "KB": 1024,
+            "G": 1024**3,
+            "M": 1024**2,
+            "K": 1024,
+            "B": 1,
+        }
+        size_str = size_str.strip().upper()
 
+        # Longest suffixes first so '100MB' is not read as '100M' + 'B'
         for unit, multiplier in units.items():
             if size_str.endswith(unit):
                 return int(size_str[: -len(unit)]) * multiplier
@@ -153,53 +162,57 @@ class StructuredLogger:
 
     def debug(self, message: str, **kwargs):
         """Log debug message with structured context."""
+        exc_info = kwargs.pop("exc_info", None)
         extra = self._enrich_record(kwargs)
-        self.logger.debug(message, extra=extra)
+        self.logger.debug(message, extra=extra, exc_info=exc_info)
 
     def info(self, message: str, **kwargs):
         """Log info message with structured context."""
+        exc_info = kwargs.pop("exc_info", None)
         extra = self._enrich_record(kwargs)
-        self.logger.info(message, extra=extra)
+        self.logger.info(message, extra=extra, exc_info=exc_info)
 
     def warning(self, message: str, **kwargs):
         """Log warning message with structured context."""
+        exc_info = kwargs.pop("exc_info", None)
         extra = self._enrich_record(kwargs)
-        self.logger.warning(message, extra=extra)
+        self.logger.warning(message, extra=extra, exc_info=exc_info)
 
     def error(self, message: str, **kwargs):
         """Log error message with structured context."""
+        exc_info = kwargs.pop("exc_info", None)
         extra = self._enrich_record(kwargs)
-        self.logger.error(message, extra=extra)
+        self.logger.error(message, extra=extra, exc_info=exc_info)
 
     def critical(self, message: str, **kwargs):
         """Log critical message with structured context."""
+        exc_info = kwargs.pop("exc_info", None)
         extra = self._enrich_record(kwargs)
-        self.logger.critical(message, extra=extra)
+        self.logger.critical(message, extra=extra, exc_info=exc_info)
 
     def exception(self, message: str, **kwargs):
         """Log exception with full traceback."""
+        exc_info = kwargs.pop("exc_info", True)
         extra = self._enrich_record(kwargs)
-        self.logger.exception(message, extra=extra)
+        self.logger.exception(message, extra=extra, exc_info=exc_info)
 
     def log_request(
         self, method: str, path: str, status_code: int, duration_ms: float, **kwargs
     ):
         """Log HTTP request with structured format."""
-        extra = self._enrich_record(
-            {
-                "http": {
-                    "method": method,
-                    "path": path,
-                    "status_code": status_code,
-                    "duration_ms": duration_ms,
-                },
-                **kwargs,
-            }
-        )
+        fields = {
+            "http": {
+                "method": method,
+                "path": path,
+                "status_code": status_code,
+                "duration_ms": duration_ms,
+            },
+            **kwargs,
+        }
 
         level = "error" if status_code >= 400 else "info"
         getattr(self, level)(
-            f"{method} {path} {status_code} {duration_ms:.2f}ms", extra=extra
+            f"{method} {path} {status_code} {duration_ms:.2f}ms", **fields
         )
 
     def log_database_query(
@@ -210,39 +223,35 @@ class StructuredLogger:
         **kwargs,
     ):
         """Log database query with performance metrics."""
-        extra = self._enrich_record(
-            {
-                "database": {
-                    "query": query[:200] + "..." if len(query) > 200 else query,
-                    "duration_ms": duration_ms,
-                    "rows_affected": rows_affected,
-                },
-                **kwargs,
-            }
-        )
+        fields = {
+            "database": {
+                "query": query[:200] + "..." if len(query) > 200 else query,
+                "duration_ms": duration_ms,
+                "rows_affected": rows_affected,
+            },
+            **kwargs,
+        }
 
         level = "warning" if duration_ms > 1000 else "info"
         getattr(self, level)(
-            f"Database query completed in {duration_ms:.2f}ms", extra=extra
+            f"Database query completed in {duration_ms:.2f}ms", **fields
         )
 
     def log_kafka_event(
         self, topic: str, partition: int, offset: int, event_type: str, **kwargs
     ):
         """Log Kafka producer/consumer events."""
-        extra = self._enrich_record(
-            {
-                "kafka": {
-                    "topic": topic,
-                    "partition": partition,
-                    "offset": offset,
-                    "event_type": event_type,
-                },
-                **kwargs,
-            }
-        )
+        fields = {
+            "kafka": {
+                "topic": topic,
+                "partition": partition,
+                "offset": offset,
+                "event_type": event_type,
+            },
+            **kwargs,
+        }
 
-        self.info(f"Kafka {event_type}: {topic}[{partition}]@{offset}", extra=extra)
+        self.info(f"Kafka {event_type}: {topic}[{partition}]@{offset}", **fields)
 
 
 # Global logger registry

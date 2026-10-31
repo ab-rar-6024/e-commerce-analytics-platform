@@ -12,6 +12,7 @@ import os
 import shutil
 import subprocess
 from datetime import datetime, timedelta
+from enum import Enum
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -24,7 +25,7 @@ from ..utils.spark_utils import get_secure_temp_dir
 logger = logging.getLogger(__name__)
 
 
-class BackupStatus:
+class BackupStatus(str, Enum):
     """Enumeration of backup statuses."""
 
     PENDING = "pending"
@@ -33,13 +34,19 @@ class BackupStatus:
     FAILED = "failed"
     EXPIRED = "expired"
 
+    def __str__(self) -> str:
+        return self.value
 
-class BackupType:
+
+class BackupType(str, Enum):
     """Enumeration of backup types."""
 
     FULL = "full"
     INCREMENTAL = "incremental"
     DIFFERENTIAL = "differential"
+
+    def __str__(self) -> str:
+        return self.value
 
 
 class BackupManager:

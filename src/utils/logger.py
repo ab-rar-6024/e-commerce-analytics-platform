@@ -1,16 +1,19 @@
 import logging
+from typing import Union
 
 
-def setup_logging(name: str = "ecommerce_analytics") -> logging.Logger:
+def setup_logging(
+    name: str = "ecommerce_analytics", level: Union[int, str] = logging.INFO
+) -> logging.Logger:
     """
     Sets up a standardized logger.
     """
     logger = logging.getLogger(name)
-    logger.setLevel(logging.INFO)
+    logger.setLevel(level)
 
-    # Create console handler and set level to info
+    # Create console handler and set its level
     ch = logging.StreamHandler()
-    ch.setLevel(logging.INFO)
+    ch.setLevel(level)
 
     # Create formatter
     formatter = logging.Formatter(
@@ -23,6 +26,9 @@ def setup_logging(name: str = "ecommerce_analytics") -> logging.Logger:
     # Add ch to logger
     if not logger.handlers:
         logger.addHandler(ch)
+    else:
+        for handler in logger.handlers:
+            handler.setLevel(level)
 
     return logger
 

@@ -27,6 +27,7 @@ from pyspark.sql.types import (
     TimestampType,
 )
 
+from src.streaming import data_quality
 from src.utils.logger import get_logger
 from src.utils.spark_utils import get_secure_temp_dir
 
@@ -219,6 +220,7 @@ class BaseStreamingConsumer(ABC):
         self.logger = get_logger(self.__class__.__name__)
         self.schema_validator = SchemaValidator()
         self.quality_checker = DataQualityChecker(self.logger)
+        self._quality_engine: Optional[Any] = None
 
         # Error handling
         self.error_callback: Optional[Callable] = None
@@ -266,6 +268,23 @@ class BaseStreamingConsumer(ABC):
     def transform_stream(self, df: DataFrame) -> DataFrame:
         """Apply transformations to the stream."""
         pass
+
+    def _assess_quality(self, df: DataFrame, stream_type: str) -> DataFrame:
+        """Flag data quality issues with the streaming quality engine.
+
+        A failure in the engine must not take the stream down, so on error the
+        input DataFrame is returned unchanged.
+        """
+        try:
+            if self._quality_engine is None:
+                self._quality_engine = data_quality.DataQualityEngine(self.spark)
+            quality_df, _ = self._quality_engine.assess_data_quality(
+                df, stream_type, enable_profiling=False
+            )
+            return quality_df
+        except Exception as e:
+            self.logger.warning(f"Data quality assessment skipped: {e}")
+            return df
 
     def _get_critical_columns(self) -> List[str]:
         """Get list of critical columns that should not have null values."""
@@ -447,7 +466,7 @@ class TransactionStreamConsumer(BaseStreamingConsumer):
             (col("price") > 0) & (col("quantity") > 0) & col("user_id").isNotNull()
         )
 
-        return filtered_df
+        return self._assess_quality(filtered_df, "transaction")
 
     def _get_critical_columns(self) -> List[str]:
         """Get critical columns for transactions."""
@@ -511,7 +530,7 @@ class UserBehaviorStreamConsumer(BaseStreamingConsumer):
             & col("event_type").isNotNull()
         )
 
-        return filtered_df
+        return self._assess_quality(filtered_df, "user_behavior")
 
     def _get_critical_columns(self) -> List[str]:
         """Get critical columns for user behavior."""

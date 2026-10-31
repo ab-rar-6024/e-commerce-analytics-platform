@@ -21,7 +21,7 @@ class TestLogger:
         """Test setup_logging with default parameters."""
         logger = setup_logging()
         assert logger is not None
-        assert logger.name == "ecap"
+        assert logger.name == "ecommerce_analytics"
 
     def test_setup_logging_custom_name(self):
         """Test setup_logging with custom name."""

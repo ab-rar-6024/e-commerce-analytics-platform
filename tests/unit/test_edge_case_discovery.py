@@ -92,7 +92,7 @@ def extreme_string_values(draw):
                 st.just("../../"),
                 st.just("../../../"),  # Path traversal patterns
                 st.text(min_size=0, max_size=0),  # Empty from strategy
-                st.text(min_size=10000, max_size=10000),  # Very long string
+                st.just("A" * 10000),  # Very long string
                 st.text(
                     alphabet=st.characters(min_codepoint=0, max_codepoint=127)
                 ),  # ASCII only
@@ -401,7 +401,10 @@ class TestAutomatedEdgeCaseDiscovery:
         )
 
         # Analyze results
-        assert len(edge_cases) > 0, "Should discover some edge cases"
+        # A robust function may legitimately produce no edge cases; discovery
+        # itself is verified against fragile functions in
+        # test_discovery_flags_fragile_functions
+        assert isinstance(edge_cases, list)
 
         # Check for specific edge case types
         has_infinity_case = any(
@@ -439,7 +442,7 @@ class TestAutomatedEdgeCaseDiscovery:
         )
 
         # Analyze results
-        assert len(edge_cases) > 0, "Should discover some edge cases"
+        assert isinstance(edge_cases, list)
 
         # Check for specific patterns
         has_empty_string = any(case.get("input") == "" for case in edge_cases)
@@ -481,11 +484,33 @@ class TestAutomatedEdgeCaseDiscovery:
         )
 
         # Analyze results
-        assert len(edge_cases) > 0, "Should discover some edge cases"
+        assert isinstance(edge_cases, list)
 
         print(f"\nDiscovered {len(edge_cases)} temporal edge cases:")
         for case in edge_cases[:5]:  # Show first 5
             print(f"  Input: {case['input']}, Type: {case['type']}")
+
+    def test_discovery_flags_fragile_functions(self, edge_case_tester):
+        """Functions that raise on boundary inputs must be reported as edge cases."""
+
+        def fragile_numeric(value):
+            return 100 / value  # ZeroDivisionError / TypeError
+
+        def fragile_string(value):
+            return value[0]  # IndexError on the empty string
+
+        def fragile_temporal(value):
+            return value.hour  # AttributeError on non-datetime inputs
+
+        for discover, fragile in [
+            (edge_case_tester.discover_numeric_edge_cases, fragile_numeric),
+            (edge_case_tester.discover_string_edge_cases, fragile_string),
+            (edge_case_tester.discover_temporal_edge_cases, fragile_temporal),
+        ]:
+            edge_cases = discover(fragile)
+            assert any(
+                case["type"] == "exception" for case in edge_cases
+            ), f"{fragile.__name__} should be flagged"
 
     @given(extreme_numeric_values())
     @settings(max_examples=20, deadline=None)
@@ -505,7 +530,8 @@ class TestAutomatedEdgeCaseDiscovery:
                 if amount_float > 1000:
                     return min(amount_float / 1000, 10)  # Cap at 10
                 else:
-                    return amount_float / 1000
+                    # Negative amounts must not produce a negative risk score
+                    return max(amount_float, 0.0) / 1000
 
             except (ValueError, TypeError, OverflowError, ZeroDivisionError):
                 return -1  # Error indicator

@@ -310,7 +310,7 @@ class BackupAutomation:
             await self._trigger_alert(
                 "backup_duration_exceeded",
                 f"Backup duration exceeded threshold: {schedule_name}",
-                f"Backup took {duration/60:.1f} minutes (threshold: {max_duration/60} minutes)",
+                f"Backup took {duration/60:.1f} minutes (threshold: {max_duration/60:g} minutes)",
                 severity="warning",
             )
 

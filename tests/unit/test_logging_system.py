@@ -7,6 +7,7 @@ handlers, and middleware integration.
 
 import json
 import logging
+import sys
 import tempfile
 import time
 from io import StringIO
@@ -69,6 +70,11 @@ class TestStructuredLogger:
         """Create temporary log file for testing."""
         with tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=".log") as f:
             yield f.name
+        # Windows cannot delete a file that a logging handler still has open
+        std_logger = logging.getLogger("test.logger")
+        for handler in list(std_logger.handlers):
+            handler.close()
+            std_logger.removeHandler(handler)
         Path(f.name).unlink(missing_ok=True)
 
     @pytest.fixture
@@ -314,7 +320,7 @@ class TestJSONFormatter:
                 lineno=42,
                 msg="Error occurred",
                 args=(),
-                exc_info=True,  # This captures the current exception
+                exc_info=sys.exc_info(),  # Capture the exception while it is active
             )
 
         formatted = formatter.format(record)
@@ -392,7 +398,7 @@ class TestLogHandlers:
     @pytest.fixture
     def mock_elasticsearch(self):
         """Mock Elasticsearch client."""
-        with patch("src.logging.handlers.Elasticsearch") as mock_es:
+        with patch("elasticsearch.Elasticsearch") as mock_es:
             mock_client = Mock()
             mock_client.ping.return_value = True
             mock_client.bulk.return_value = {"errors": False, "items": []}

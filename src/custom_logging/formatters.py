@@ -7,6 +7,7 @@ for structured logging output.
 
 import json
 import logging
+import sys
 import time
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
@@ -72,11 +73,15 @@ class JSONFormatter(logging.Formatter):
             }
 
         # Add exception information
-        if record.exc_info and record.exc_info[0]:
+        exc_info = record.exc_info
+        if exc_info is True:
+            # LogRecord built directly (not via Logger._log) keeps the raw flag
+            exc_info = sys.exc_info()
+        if exc_info and exc_info[0]:
             log_entry["exception"] = {
-                "type": record.exc_info[0].__name__,
-                "message": str(record.exc_info[1]),
-                "traceback": self.formatException(record.exc_info),
+                "type": exc_info[0].__name__,
+                "message": str(exc_info[1]),
+                "traceback": self.formatException(exc_info),
             }
 
         # Add extra fields from record

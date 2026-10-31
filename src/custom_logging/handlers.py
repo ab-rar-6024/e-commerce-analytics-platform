@@ -109,10 +109,11 @@ class ElasticsearchHandler(logging.Handler):
 
             with self.buffer_lock:
                 self.buffer.append(doc)
+                buffer_full = len(self.buffer) >= self.buffer_size
 
-                # Flush if buffer is full
-                if len(self.buffer) >= self.buffer_size:
-                    self._flush_buffer()
+            # Flush outside the lock: _flush_buffer acquires it again
+            if buffer_full:
+                self._flush_buffer()
 
         except Exception:
             self.handleError(record)

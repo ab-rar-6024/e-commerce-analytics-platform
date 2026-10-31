@@ -89,8 +89,9 @@ def transaction_data(draw):
         ),
         "timestamp": draw(
             st.datetimes(
-                min_value=datetime(2020, 1, 1, tzinfo=timezone.utc),
-                max_value=datetime(2025, 12, 31, tzinfo=timezone.utc),
+                min_value=datetime(2020, 1, 1),
+                max_value=datetime(2025, 12, 31),
+                timezones=st.just(timezone.utc),
             )
         ),
         "customer_tier": draw(
@@ -174,8 +175,9 @@ def user_behavior_data(draw):
         ),
         "timestamp": draw(
             st.datetimes(
-                min_value=datetime(2020, 1, 1, tzinfo=timezone.utc),
-                max_value=datetime(2025, 12, 31, tzinfo=timezone.utc),
+                min_value=datetime(2020, 1, 1),
+                max_value=datetime(2025, 12, 31),
+                timezones=st.just(timezone.utc),
             )
         ),
         "user_agent": draw(

@@ -12,7 +12,8 @@ from typing import Any, Dict, List, Optional, Tuple
 import pytest
 from hypothesis import assume, given, settings
 from hypothesis import strategies as st
-from pyspark.sql import SparkSession
+from pyspark.sql import Column, SparkSession
+from pyspark.sql import functions as F
 from pyspark.sql.types import (
     DoubleType,
     IntegerType,
@@ -29,6 +30,11 @@ from src.analytics.rfm_segmentation import RFMSegmentationEngine
 from src.utils.spark_utils import create_spark_session
 
 
+def clip_score(column: Column, low: int = 1, high: int = 5) -> Column:
+    """Clamp a score column to [low, high] (Spark Columns have no pandas-style clip)."""
+    return F.greatest(F.lit(low), F.least(F.lit(high), column))
+
+
 # Customer transaction data strategy
 @st.composite
 def customer_transaction_data(draw):
@@ -43,8 +49,9 @@ def customer_transaction_data(draw):
         ),
         "transaction_date": draw(
             st.datetimes(
-                min_value=datetime(2020, 1, 1, tzinfo=timezone.utc),
-                max_value=datetime(2025, 12, 31, tzinfo=timezone.utc),
+                min_value=datetime(2020, 1, 1),
+                max_value=datetime(2025, 12, 31),
+                timezones=st.just(timezone.utc),
             )
         ),
         "monetary_value": draw(
@@ -73,8 +80,9 @@ def fraud_transaction_data(draw):
         ),
         "timestamp": draw(
             st.datetimes(
-                min_value=datetime(2020, 1, 1, tzinfo=timezone.utc),
-                max_value=datetime.now(timezone.utc),
+                min_value=datetime(2020, 1, 1),
+                max_value=datetime.now(timezone.utc).replace(tzinfo=None),
+                timezones=st.just(timezone.utc),
             )
         ),
         "location": draw(st.text(min_size=1, max_size=100)),
@@ -158,13 +166,13 @@ class TestRFMBusinessRuleProperties:
         # Calculate RFM scores (mock implementation for testing)
         # In real scenario, this would call rfm_segmentation.calculate_rfm_scores()
         rfm_df = df.withColumn(
-            "r_score", (5 - (df.recency_days / 730)).cast("int").clip(1, 5)
+            "r_score", clip_score((5 - (df.recency_days / 730)).cast("int"))
         )
         rfm_df = rfm_df.withColumn(
-            "f_score", (df.frequency_count / 200 + 1).cast("int").clip(1, 5)
+            "f_score", clip_score((df.frequency_count / 200 + 1).cast("int"))
         )
         rfm_df = rfm_df.withColumn(
-            "m_score", (df.monetary_value / 10000 + 1).cast("int").clip(1, 5)
+            "m_score", clip_score((df.monetary_value / 10000 + 1).cast("int"))
         )
 
         results = rfm_df.collect()
@@ -209,7 +217,7 @@ class TestRFMBusinessRuleProperties:
 
         # Calculate M-scores using simplified logic
         scored_df = df.withColumn(
-            "m_score", ((df.monetary_value / 1000.0).cast("int") + 1).clip(1, 5)
+            "m_score", clip_score(((df.monetary_value / 1000.0).cast("int") + 1))
         ).orderBy("monetary_value")
 
         results = scored_df.collect()
@@ -238,7 +246,7 @@ class TestRFMBusinessRuleProperties:
 
         # Calculate R-score using inverse relationship
         scored_df = df.withColumn(
-            "r_score", (6 - (df.recency_days / 365.0).cast("int")).clip(1, 5)
+            "r_score", clip_score((6 - (df.recency_days / 365.0).cast("int")))
         )
 
         result = scored_df.collect()[0]

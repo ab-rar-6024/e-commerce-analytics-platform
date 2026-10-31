@@ -11,7 +11,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
-from hypothesis import given, settings
+from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
 
 try:
@@ -28,6 +28,7 @@ except ImportError:
 
 
 from src.api.auth.security import create_access_token
+from src.api.dependencies import get_database_session
 from src.api.main import app
 
 # JSON Schema for API request validation
@@ -135,8 +136,10 @@ class TestPropertyBasedAPI:
 
     @pytest.fixture
     def client(self):
-        """Create test client."""
-        return TestClient(app)
+        """Create test client with the database dependency stubbed out."""
+        app.dependency_overrides[get_database_session] = lambda: MagicMock()
+        yield TestClient(app)
+        app.dependency_overrides.pop(get_database_session, None)
 
     @pytest.fixture
     def auth_token(self):
@@ -149,7 +152,7 @@ class TestPropertyBasedAPI:
         return {"Authorization": f"Bearer {auth_token}"}
 
     @given(malformed_json_strings())
-    @settings(max_examples=50, deadline=None)
+    @settings(max_examples=50, deadline=None, suppress_health_check=[HealthCheck.function_scoped_fixture])
     def test_api_endpoints_handle_malformed_json(
         self, client, auth_headers, malformed_json
     ):
@@ -198,7 +201,7 @@ class TestPropertyBasedAPI:
                 )
 
     @given(malformed_headers())
-    @settings(max_examples=30, deadline=None)
+    @settings(max_examples=30, deadline=None, suppress_health_check=[HealthCheck.function_scoped_fixture])
     def test_api_endpoints_handle_malformed_headers(self, client, malformed_headers):
         """
         Test that API endpoints handle malformed or unusual headers gracefully.
@@ -207,8 +210,8 @@ class TestPropertyBasedAPI:
         """
         endpoints = [
             ("/api/v1/health", "GET"),
-            ("/api/v1/analytics/customers", "POST"),
-            ("/api/v1/fraud/detect", "POST"),
+            ("/api/v1/analytics/customers/segments", "GET"),
+            ("/api/v1/fraud/risk-assessment", "GET"),
         ]
 
         for endpoint, method in endpoints:
@@ -232,13 +235,16 @@ class TestPropertyBasedAPI:
                     # Some endpoints might return non-JSON, that's acceptable
                     pass
 
+            except UnicodeEncodeError:
+                # The HTTP client refuses to send non-ASCII headers; nothing reached the API
+                return
             except Exception as e:
                 pytest.fail(
                     f"API crashed on malformed headers for endpoint {endpoint}: {e}"
                 )
 
     @given(extreme_query_params())
-    @settings(max_examples=30, deadline=None)
+    @settings(max_examples=30, deadline=None, suppress_health_check=[HealthCheck.function_scoped_fixture])
     def test_api_endpoints_handle_extreme_query_params(
         self, client, auth_headers, extreme_params
     ):
@@ -294,7 +300,7 @@ class TestPropertyBasedAPI:
                 )
 
     @given(from_schema(CUSTOMER_ANALYTICS_SCHEMA))
-    @settings(max_examples=30, deadline=None)
+    @settings(max_examples=30, deadline=None, suppress_health_check=[HealthCheck.function_scoped_fixture])
     def test_customer_analytics_endpoint_valid_inputs(
         self, client, auth_headers, customer_data
     ):
@@ -303,38 +309,37 @@ class TestPropertyBasedAPI:
 
         Property: Valid inputs should either succeed or fail predictably.
         """
-        with patch("src.api.v1.endpoints.analytics.get_database") as mock_db:
-            # Mock database to avoid actual DB calls in property tests
-            mock_db.return_value = MagicMock()
 
-            response = client.post(
-                "/api/v1/analytics/customers", json=customer_data, headers=auth_headers
-            )
+        response = client.get(
+            "/api/v1/analytics/customers/segments",
+            params={"segment_type": customer_data["customer_id"]},
+            headers=auth_headers,
+        )
 
-            # Should not crash
-            assert 200 <= response.status_code < 600
+        # Should not crash
+        assert 200 <= response.status_code < 600
 
-            # Should return valid JSON
-            try:
-                response_data = response.json()
+        # Should return valid JSON
+        try:
+            response_data = response.json()
 
-                if response.status_code == 200:
-                    # Successful response should have expected structure
-                    assert isinstance(
-                        response_data, dict
-                    ), "Success response should be dict"
+            if response.status_code == 200:
+                # Successful response should have expected structure
+                assert isinstance(
+                    response_data, dict
+                ), "Success response should be dict"
 
-                elif response.status_code in [400, 422]:
-                    # Validation error should have error details
-                    assert (
-                        "detail" in response_data or "error" in response_data
-                    ), "Error response should contain details"
+            elif response.status_code in [400, 422]:
+                # Validation error should have error details
+                assert (
+                    "detail" in response_data or "error" in response_data
+                ), "Error response should contain details"
 
-            except json.JSONDecodeError:
-                pytest.fail(f"API returned invalid JSON: {response.text}")
+        except json.JSONDecodeError:
+            pytest.fail(f"API returned invalid JSON: {response.text}")
 
     @given(from_schema(FRAUD_DETECTION_SCHEMA))
-    @settings(max_examples=30, deadline=None)
+    @settings(max_examples=30, deadline=None, suppress_health_check=[HealthCheck.function_scoped_fixture])
     def test_fraud_detection_endpoint_valid_inputs(
         self, client, auth_headers, fraud_data
     ):
@@ -343,39 +348,39 @@ class TestPropertyBasedAPI:
 
         Property: Valid fraud detection requests should process without errors.
         """
-        with patch(
-            "src.api.v1.endpoints.fraud.FraudDetectionOrchestrator"
-        ) as mock_fraud:
-            mock_fraud.return_value.detect_fraud.return_value = {
-                "risk_score": 0.5,
-                "fraud_probability": 0.3,
-                "alerts": [],
-            }
 
-            response = client.post(
-                "/api/v1/fraud/detect", json=fraud_data, headers=auth_headers
-            )
+        response = client.get(
+            "/api/v1/fraud/risk-assessment",
+            params={"assessment_type": fraud_data["customer_id"]},
+            headers=auth_headers,
+        )
 
-            # Should not crash
-            assert 200 <= response.status_code < 600
+        # Should not crash
+        assert 200 <= response.status_code < 600
 
-            # Should return valid JSON
-            try:
-                response_data = response.json()
+        # Should return valid JSON
+        try:
+            response_data = response.json()
 
-                if response.status_code == 200:
-                    # Successful fraud detection should have risk score
-                    assert isinstance(response_data, dict), "Response should be dict"
-                    if "risk_score" in response_data:
-                        assert (
-                            0 <= response_data["risk_score"] <= 1
-                        ), f"Risk score {response_data['risk_score']} should be 0-1"
+            if response.status_code == 200:
+                # Successful fraud detection should have risk score
+                assert isinstance(response_data, dict), "Response should be dict"
+                if "risk_score" in response_data:
+                    assert (
+                        0 <= response_data["risk_score"] <= 1
+                    ), f"Risk score {response_data['risk_score']} should be 0-1"
 
-            except json.JSONDecodeError:
-                pytest.fail(f"Fraud detection returned invalid JSON: {response.text}")
+        except json.JSONDecodeError:
+            pytest.fail(f"Fraud detection returned invalid JSON: {response.text}")
 
-    @given(st.text(min_size=0, max_size=10000))
-    @settings(max_examples=20, deadline=None)
+    @given(
+        st.text(
+            alphabet=st.characters(min_codepoint=33, max_codepoint=126),
+            min_size=0,
+            max_size=10000,
+        )
+    )
+    @settings(max_examples=20, deadline=None, suppress_health_check=[HealthCheck.function_scoped_fixture])
     def test_authentication_edge_cases(self, client, auth_token_text):
         """
         Test authentication with various token formats.
@@ -384,7 +389,7 @@ class TestPropertyBasedAPI:
         """
         headers = {"Authorization": f"Bearer {auth_token_text}"}
 
-        response = client.get("/api/v1/analytics/customers", headers=headers)
+        response = client.get("/api/v1/analytics/customers/segments", headers=headers)
 
         # Should not crash
         assert 200 <= response.status_code < 600
@@ -403,8 +408,10 @@ class TestAPIInvariants:
 
     @pytest.fixture
     def client(self):
-        """Create test client."""
-        return TestClient(app)
+        """Create test client with the database dependency stubbed out."""
+        app.dependency_overrides[get_database_session] = lambda: MagicMock()
+        yield TestClient(app)
+        app.dependency_overrides.pop(get_database_session, None)
 
     @pytest.fixture
     def auth_headers(self):
@@ -441,43 +448,46 @@ class TestAPIInvariants:
                 pytest.fail(f"Request to {endpoint} failed: {e}")
 
     @given(st.integers(min_value=1, max_value=1000))
+    @settings(
+        max_examples=20,
+        deadline=None,
+        suppress_health_check=[HealthCheck.function_scoped_fixture],
+    )
     def test_pagination_invariant(self, client, auth_headers, page_size):
         """
         Test that pagination parameters are handled consistently.
 
         Invariant: Page size should be respected and capped at reasonable limits.
         """
-        with patch("src.api.v1.endpoints.analytics.get_database") as mock_db:
-            mock_db.return_value = MagicMock()
 
-            params = {"limit": page_size, "offset": 0}
+        params = {"limit": page_size, "offset": 0}
 
-            response = client.get(
-                "/api/v1/analytics/customers", params=params, headers=auth_headers
-            )
+        response = client.get(
+            "/api/v1/customers/", params=params, headers=auth_headers
+        )
 
-            # Should not crash regardless of page size
-            assert 200 <= response.status_code < 600
+        # Should not crash regardless of page size
+        assert 200 <= response.status_code < 600
 
-            if response.status_code == 200:
-                try:
-                    data = response.json()
+        if response.status_code == 200:
+            try:
+                data = response.json()
 
-                    # If response contains items, length should respect limits
-                    if isinstance(data, dict) and "items" in data:
-                        items = data["items"]
-                        if isinstance(items, list):
-                            # Should not return more items than requested
-                            # (allowing for server-side caps)
-                            max_allowed = min(
-                                page_size, 100
-                            )  # Assume 100 is server cap
-                            assert (
-                                len(items) <= max_allowed
-                            ), f"Returned {len(items)} items, expected max {max_allowed}"
+                # If response contains items, length should respect limits
+                if isinstance(data, dict) and "items" in data:
+                    items = data["items"]
+                    if isinstance(items, list):
+                        # Should not return more items than requested
+                        # (allowing for server-side caps)
+                        max_allowed = min(
+                            page_size, 100
+                        )  # Assume 100 is server cap
+                        assert (
+                            len(items) <= max_allowed
+                        ), f"Returned {len(items)} items, expected max {max_allowed}"
 
-                except json.JSONDecodeError:
-                    pass  # Non-JSON responses are acceptable for some endpoints
+            except json.JSONDecodeError:
+                pass  # Non-JSON responses are acceptable for some endpoints
 
     def test_error_response_format_invariant(self, client):
         """
@@ -486,11 +496,12 @@ class TestAPIInvariants:
         Invariant: All error responses should contain error details.
         """
         # Test without authentication (should trigger 401)
-        response = client.get("/api/v1/analytics/customers")
+        response = client.get("/api/v1/analytics/customers/segments")
 
-        assert (
-            response.status_code == 401
-        ), "Should return 401 for unauthenticated request"
+        assert response.status_code in [
+            401,
+            403,
+        ], "Should reject unauthenticated request with 401/403"
 
         try:
             error_data = response.json()

@@ -91,7 +91,7 @@ def main():
     args = parser.parse_args()
 
     # Set up logging
-    setup_logging(args.log_level)
+    setup_logging(level=args.log_level)
 
     # Run the appropriate command
     if args.command == "transaction":

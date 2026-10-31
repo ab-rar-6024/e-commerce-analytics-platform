@@ -9,12 +9,72 @@ A production-ready, enterprise-grade real-time analytics platform for e-commerce
 
 This represents a **major engineering milestone** - a fully functional, production-ready e-commerce analytics platform that transforms raw data into actionable business insights with real-time fraud detection, customer segmentation, and comprehensive operational monitoring.
 
-[![Build Status](https://img.shields.io/github/actions/workflow/status/joaoblasques/e-commerce-analytics-platform/ci.yml)](https://github.com/joaoblasques/e-commerce-analytics-platform/actions)
-[![Project Status](https://img.shields.io/badge/Project%20Status-COMPLETE-brightgreen)](https://github.com/joaoblasques/e-commerce-analytics-platform)
-[![Tasks Completed](https://img.shields.io/badge/Tasks%20Completed-60%2F60%20(100%25)-success)](https://github.com/joaoblasques/e-commerce-analytics-platform)
-[![Data Engineering](https://img.shields.io/badge/Data%20Engineering-Advanced-blue)](https://github.com/joaoblasques/e-commerce-analytics-platform)
+[![Build Status](https://img.shields.io/github/actions/workflow/status/ab-rar-6024/e-commerce-analytics-platform/ci.yml)](https://github.com/ab-rar-6024/e-commerce-analytics-platform/actions)
+[![Project Status](https://img.shields.io/badge/Project%20Status-COMPLETE-brightgreen)](https://github.com/ab-rar-6024/e-commerce-analytics-platform)
+[![Tasks Completed](https://img.shields.io/badge/Tasks%20Completed-60%2F60%20(100%25)-success)](https://github.com/ab-rar-6024/e-commerce-analytics-platform)
+[![Data Engineering](https://img.shields.io/badge/Data%20Engineering-Advanced-blue)](https://github.com/ab-rar-6024/e-commerce-analytics-platform)
 [![Spark Version](https://img.shields.io/badge/Apache%20Spark-3.4+-orange)](https://spark.apache.org/)
 [![Delta Lake](https://img.shields.io/badge/Delta%20Lake-2.4+-green)](https://delta.io/)
+
+## 📌 About This Repository
+
+This repository is a maintained copy of the MIT-licensed
+[joaoblasques/e-commerce-analytics-platform](https://github.com/joaoblasques/e-commerce-analytics-platform)
+by João Blasques. All original architecture and features are credited to the original author;
+see [LICENSE](LICENSE).
+
+Changes made in this copy:
+
+- **Bug fixes**
+  - API: `CompressionMiddleware` was registered with a duplicate `app` argument, which made every request fail.
+  - Logging: `_parse_size('100M')`/`'100MB'` parsing, `StructuredLogger` helpers nesting fields under `extra`,
+    `exc_info` passthrough, `JSONFormatter` with `exc_info=True`, and a deadlock in the Elasticsearch
+    handler when its buffer filled.
+  - `setup_logging()` gained a `level` argument (the producer CLI was passing the log level as the logger name).
+  - Disaster recovery: `BackupStatus`/`BackupType` are now real enums (the code already used `.value`).
+  - Data governance: lineage "recent activity" cutoff crashed for hours earlier than the lookback window.
+  - Spark import validator now recognises `pyspark.sql.functions` imports.
+  - Streaming consumers now run the `DataQualityEngine` on the transformed stream.
+- **Test fixes**: tests that targeted non-existent endpoints, mocked async calls synchronously,
+  cleared the global Prometheus registry, or used APIs that newer libraries reject were corrected.
+- **Slow tests**: the disaster-recovery suite no longer waits on the EC2 metadata endpoint
+  (about 5 minutes down to about 10 seconds).
+
+### Known issues
+
+- `tests/test_streaming_consumers.py::TestDataQualityChecker::test_check_nulls` fails: the test and
+  `DataQualityChecker.check_nulls` disagree about the result shape.
+- Integration tests need the Docker stack (Kafka, PostgreSQL, Redis, ...) to be running.
+- `.encryption_key` and `secrets.encrypted` are committed in the original project's history. Treat them as
+  public sample values and **never reuse them for real secrets**.
+
+### 🪟 Local setup on Windows (PowerShell)
+
+Requires Python 3.10+ and a **JDK 8/11/17** (PySpark 3.4 does not support newer JDKs reliably).
+
+```powershell
+# 1. Create and activate a virtual environment
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+
+# 2. Install dependencies from the lock file
+pip install poetry
+poetry install
+
+# 3. Packages the code imports but pyproject.toml does not declare yet
+pip install "opentelemetry-exporter-jaeger==1.21.0" python-multipart pytest-timeout
+
+# 4. Point Spark at your JDK and make it bind to localhost
+$env:JAVA_HOME = "C:\Program Files\Eclipse Adoptium\jdk-17.0.20.101-hotspot"
+$env:SPARK_LOCAL_HOSTNAME = "localhost"   # required if your PC name contains "_"
+$env:SPARK_LOCAL_IP = "127.0.0.1"
+
+# 5. Run the unit tests (pytest-timeout avoids hangs on tests that need external services)
+python -m pytest tests/unit --no-cov --timeout=300
+```
+
+Tip: `pyspark` is a ~300 MB download; if `poetry install` is interrupted, run
+`pip install pyspark==3.4.4` and then `poetry install` again.
 
 ## 🎯 Data Engineering Excellence
 
@@ -330,7 +390,7 @@ This platform showcases **production-grade data engineering patterns** and advan
 
 ```bash
 # 1. Clone and navigate to project
-git clone https://github.com/joaoblasques/e-commerce-analytics-platform.git
+git clone https://github.com/ab-rar-6024/e-commerce-analytics-platform.git
 cd e-commerce-analytics-platform
 
 # 2. Install Python dependencies
@@ -786,8 +846,8 @@ git push origin feature/amazing-data-pipeline
 ## 💬 **Community & Support**
 
 ### 🆘 **Getting Help**
-- **🐛 Issues**: [GitHub Issues](https://github.com/joaoblasques/e-commerce-analytics-platform/issues) for bugs and feature requests
-- **💬 Discussions**: [GitHub Discussions](https://github.com/joaoblasques/e-commerce-analytics-platform/discussions) for questions and ideas
+- **🐛 Issues**: [GitHub Issues](https://github.com/ab-rar-6024/e-commerce-analytics-platform/issues) for bugs and feature requests
+- **💬 Discussions**: [GitHub Discussions](https://github.com/ab-rar-6024/e-commerce-analytics-platform/discussions) for questions and ideas
 - **📚 Documentation**: Comprehensive guides in the [docs/](docs/) directory
 - **🔍 Troubleshooting**: Check [common issues](docs/troubleshooting.md) and solutions
 
@@ -810,11 +870,11 @@ This project is licensed under the **MIT License** - see the [LICENSE](LICENSE) 
 
 **🚀 Built with passion for advanced data engineering**
 
-[![⭐ Star this repo](https://img.shields.io/github/stars/joaoblasques/e-commerce-analytics-platform?style=social)](https://github.com/joaoblasques/e-commerce-analytics-platform)
-[![🍴 Fork this repo](https://img.shields.io/github/forks/joaoblasques/e-commerce-analytics-platform?style=social)](https://github.com/joaoblasques/e-commerce-analytics-platform/fork)
-[![👀 Watch this repo](https://img.shields.io/github/watchers/joaoblasques/e-commerce-analytics-platform?style=social)](https://github.com/joaoblasques/e-commerce-analytics-platform)
+[![⭐ Star this repo](https://img.shields.io/github/stars/ab-rar-6024/e-commerce-analytics-platform?style=social)](https://github.com/ab-rar-6024/e-commerce-analytics-platform)
+[![🍴 Fork this repo](https://img.shields.io/github/forks/ab-rar-6024/e-commerce-analytics-platform?style=social)](https://github.com/ab-rar-6024/e-commerce-analytics-platform/fork)
+[![👀 Watch this repo](https://img.shields.io/github/watchers/ab-rar-6024/e-commerce-analytics-platform?style=social)](https://github.com/ab-rar-6024/e-commerce-analytics-platform)
 
 ### 🎯 **Ready to dive into advanced data engineering?**
-[🚀 **Get Started Now**](https://github.com/joaoblasques/e-commerce-analytics-platform#-quick-start-guide) • [📖 **Read the Docs**](docs/) • [💡 **See Examples**](examples/)
+[🚀 **Get Started Now**](https://github.com/ab-rar-6024/e-commerce-analytics-platform#-quick-start-guide) • [📖 **Read the Docs**](docs/) • [💡 **See Examples**](examples/)
 
 </div>

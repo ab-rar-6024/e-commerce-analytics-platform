@@ -11,7 +11,7 @@ Provides comprehensive data lineage tracking including:
 import json
 import logging
 from dataclasses import asdict, dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from enum import Enum
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set
@@ -505,8 +505,7 @@ class DataLineageTracker:
 
     def _get_recent_activity(self, hours: int = 24) -> List[Dict[str, Any]]:
         """Get recent lineage activity."""
-        cutoff = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
-        cutoff = cutoff.replace(hour=cutoff.hour - hours)
+        cutoff = datetime.now() - timedelta(hours=hours)
 
         recent_events = [e for e in self.events if e.timestamp >= cutoff]
 

@@ -27,6 +27,15 @@ from src.disaster_recovery.runbooks.dr_runbook import (
 )
 
 
+@pytest.fixture(autouse=True)
+def offline_aws(monkeypatch):
+    """Keep boto3 from probing the EC2 metadata endpoint (slow timeout off AWS)."""
+    monkeypatch.setenv("AWS_EC2_METADATA_DISABLED", "true")
+    monkeypatch.setenv("AWS_ACCESS_KEY_ID", "test")
+    monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "test")
+    monkeypatch.setenv("AWS_DEFAULT_REGION", "us-west-2")
+
+
 class TestBackupManager:
     """Test backup manager functionality."""
 
@@ -164,15 +173,19 @@ class TestBackupManager:
         # Mock subprocess
         mock_process = Mock()
         mock_process.returncode = 0
-        mock_process.communicate.return_value = (b"Backup completed", b"")
+        mock_process.communicate = AsyncMock(return_value=(b"Backup completed", b""))
         mock_subprocess.return_value = mock_process
 
         # Mock file operations
         with patch(
             "src.disaster_recovery.backup_manager.Path.stat"
-        ) as mock_stat, patch.object(
+        ) as mock_stat, patch(
+            "src.disaster_recovery.backup_manager.Path.unlink"
+        ), patch.object(
             self.backup_manager, "_compress_file"
         ) as mock_compress, patch.object(
+            self.backup_manager, "_encrypt_file"
+        ), patch.object(
             self.backup_manager, "_verify_postgresql_backup"
         ) as mock_verify, patch.object(
             self.backup_manager, "_get_table_count"
@@ -418,8 +431,8 @@ class TestDisasterRecoveryCoordinator:
         """Test PostgreSQL health check."""
         with patch("psycopg2.connect") as mock_connect:
             # Mock successful database connection
-            mock_conn = Mock()
-            mock_cursor = Mock()
+            mock_conn = MagicMock()
+            mock_cursor = MagicMock()
             mock_conn.cursor.return_value.__enter__.return_value = mock_cursor
             mock_connect.return_value = mock_conn
 
@@ -604,11 +617,13 @@ class TestBackupAutomation:
                 BackupType.FULL, "daily_full"
             )
 
-            mock_notify.assert_called_with(
-                "Backup Failed",
-                "Backup daily_full_20241127_120000 failed: Test error",
-                severity="error",
-            )
+            # The backup name embeds the current timestamp, so match on its stable parts
+            # The last notification is the failure notice (an alert is sent first)
+            title, message = mock_notify.call_args.args
+            assert title == "Backup Failed"
+            assert message.startswith("Backup daily_full_")
+            assert message.endswith(" failed: Test error")
+            assert mock_notify.call_args.kwargs == {"severity": "error"}
 
     def test_update_backup_metrics(self):
         """Test backup metrics update."""
