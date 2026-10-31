@@ -288,8 +288,8 @@ def render_fraud_trends(dashboard_data: Dict[str, Any]) -> None:
             render_line_chart(
                 data=daily_fraud_rate,
                 x_column="date",
-                y_column="rate",
-                title="Fraud Rate Over Time",
+                y_column="alert_rate",
+                title="Share of Orders Flagged per Day",
                 height=400,
             )
 
@@ -460,15 +460,11 @@ def render_case_management(cases_data: Dict[str, Any]) -> None:
     with col1:
         st.subheader("Cases by Status")
 
-        # Mock case status data
+        # Cases group the alerts that are still being worked, so closed work is not shown
         case_status_data = [
             {"status": "Open", "count": open_cases},
             {"status": "In Progress", "count": summary.get("in_progress_cases", 0)},
-            {
-                "status": "Resolved",
-                "count": total_cases - open_cases - summary.get("in_progress_cases", 0),
-            },
-            {"status": "Escalated", "count": summary.get("overdue_cases", 0)},
+            {"status": "Escalated", "count": summary.get("escalated_cases", 0)},
         ]
 
         render_pie_chart(

@@ -727,55 +727,45 @@ def render_executive_kpi_overview(
 
     st.subheader(title)
 
-    # Executive strategic metrics
+    # Executive strategic metrics (only metrics that are computed from data)
     col1, col2, col3, col4, col5 = st.columns(5)
 
     with col1:
-        revenue = kpi_data.get("total_revenue", 0)
-        revenue_growth = kpi_data.get("revenue_growth", 0)
         st.metric(
             "Total Revenue",
-            f"${revenue:,.0f}",
-            f"{revenue_growth:+.1f}%",
-            help="Total revenue for the selected period with period-over-period growth",
+            f"${kpi_data.get('total_revenue', 0):,.0f}",
+            f"{kpi_data.get('revenue_growth', 0):+.1f}%",
+            help="Revenue for the period with growth versus the previous period of equal length",
         )
 
     with col2:
-        market_share = kpi_data.get("market_share", 0)
-        market_share_change = kpi_data.get("market_share_change", 0)
         st.metric(
-            "Market Share",
-            f"{market_share:.1f}%",
-            f"{market_share_change:+.2f}pp",
-            help="Market share percentage with change from previous period",
+            "Active Customers",
+            f"{kpi_data.get('active_customers', 0):,}",
+            help="Customers with at least one paid order in the period",
         )
 
     with col3:
-        customer_satisfaction = kpi_data.get("customer_satisfaction", 0)
-        satisfaction_change = kpi_data.get("satisfaction_change", 0)
         st.metric(
-            "Customer Satisfaction",
-            f"{customer_satisfaction:.1f}/5.0",
-            f"{satisfaction_change:+.2f}",
-            help="Average customer satisfaction score",
+            "Average Order Value",
+            f"${kpi_data.get('average_order_value', 0):,.2f}",
+            help="Revenue per paid order in the period",
         )
 
     with col4:
-        profit_margin = kpi_data.get("profit_margin", 0)
-        margin_change = kpi_data.get("margin_change", 0)
         st.metric(
             "Profit Margin",
-            f"{profit_margin:.1f}%",
-            f"{margin_change:+.2f}pp",
-            help="Overall profit margin with change from previous period",
+            f"{kpi_data.get('profit_margin', 0):.1f}%",
+            f"{kpi_data.get('margin_change', 0):+.2f}pp",
+            help="(Revenue - product cost) / revenue, with change from the previous period",
         )
 
     with col5:
-        goal_achievement = kpi_data.get("goal_achievement", 0)
         st.metric(
-            "Goal Achievement",
-            f"{goal_achievement:.0f}%",
-            help="Percentage of quarterly goals achieved",
+            "Product Rating",
+            f"{kpi_data.get('customer_satisfaction', 0):.2f}/5.0",
+            f"{kpi_data.get('satisfaction_change', 0):+.2f}",
+            help="Average rating of the products sold, weighted by units",
         )
 
 
@@ -801,25 +791,21 @@ def render_revenue_performance_executive(
     col1, col2 = st.columns(2)
 
     with col1:
-        # Year-over-Year revenue comparison waterfall
-        if "yoy_comparison" in revenue_data:
-            yoy_data = revenue_data["yoy_comparison"]
+        # Period-over-period revenue comparison waterfall
+        if "period_comparison" in revenue_data:
+            cmp = revenue_data["period_comparison"]
 
-            # Create waterfall data
             waterfall_data = [
-                {
-                    "category": "Previous Year",
-                    "value": yoy_data.get("previous_year", 0),
-                },
-                {"category": "Growth", "value": yoy_data.get("growth_amount", 0)},
-                {"category": "Current Year", "value": yoy_data.get("current_year", 0)},
+                {"category": cmp.get("previous_label", "Previous period"), "value": cmp.get("previous_period", 0)},
+                {"category": "Growth", "value": cmp.get("growth_amount", 0)},
+                {"category": cmp.get("current_label", "Current period"), "value": cmp.get("current_period", 0)},
             ]
 
             render_waterfall_chart(
                 data=waterfall_data,
                 x_column="category",
                 y_column="value",
-                title="Year-over-Year Revenue Growth",
+                title="Period-over-Period Revenue Growth",
                 height=height,
             )
 
@@ -887,15 +873,13 @@ def render_customer_metrics_executive(
     col1, col2 = st.columns(2)
 
     with col1:
-        # Customer acquisition cost trends
-        if "acquisition_trends" in customer_data:
-            cac_data = customer_data["acquisition_trends"]
-
+        # New customers per month (no marketing spend is tracked, so no CAC)
+        if customer_data.get("acquisition_trends"):
             render_line_chart(
-                data=cac_data,
+                data=customer_data["acquisition_trends"],
                 x_column="period",
-                y_column="customer_acquisition_cost",
-                title="Customer Acquisition Cost Trend",
+                y_column="new_customers",
+                title="New Customers per Month",
                 height=height,
             )
 

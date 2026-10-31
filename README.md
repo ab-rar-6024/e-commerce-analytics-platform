@@ -35,6 +35,9 @@ Changes made in this copy:
   - Data governance: lineage "recent activity" cutoff crashed for hours earlier than the lookback window.
   - Spark import validator now recognises `pyspark.sql.functions` imports.
   - Streaming consumers now run the `DataQualityEngine` on the transformed stream.
+- **Real data layer**: SQLAlchemy models for customers, products, orders, order items, clickstream events and fraud
+  alerts; a seeder, a live-traffic simulator, SQL repositories behind every endpoint, SQLite by default and
+  PostgreSQL/Supabase by configuration. The hard-coded and random "mock" payloads and dashboard placeholders were removed.
 - **Test fixes**: tests that targeted non-existent endpoints, mocked async calls synchronously,
   cleared the global Prometheus registry, or used APIs that newer libraries reject were corrected.
 - **Slow tests**: the disaster-recovery suite no longer waits on the EC2 metadata endpoint
@@ -73,24 +76,68 @@ $env:SPARK_LOCAL_IP = "127.0.0.1"
 python -m pytest tests/unit --no-cov --timeout=300
 ```
 
-### 🌐 Running the website locally (no Docker)
+### 🗄️ Data layer: what is real and what is generated
 
-The dashboard (Streamlit) talks to the FastAPI backend. The API normally requires PostgreSQL at
-startup; for a quick local run you can point it at a throwaway SQLite file instead. The dashboard
-pages are fed by the API's built-in sample-data endpoints, so no data needs to be loaded.
+Every number on the dashboard is **computed by SQL from rows in a database** (`src/api/repositories/`).
+Nothing is hard-coded in the API or the dashboard.
+
+There is no live storefront attached to this project, so the *records themselves* are generated:
+
+| Source | What it is |
+| --- | --- |
+| `scripts/seed_database.py` | A deterministic generator that creates ~4,000 customers, 480 products, ~30,000 orders over a year (growth, weekday and seasonal patterns), ~50,000 order items, ~80,000 clickstream events and a few injected fraud patterns. |
+| `scripts/simulate_live.py` | Optional. Keeps inserting new orders, sessions, stock movements and fraud alerts while it runs, so the real-time pages change. |
+
+Everything above that (revenue, margins, forecasts and their backtest accuracy, RFM segments, cohort retention,
+funnels, churn risk, fraud alerts, rule precision/recall/AUC against the known outcomes, data-quality checks,
+host/database/API measurements) is derived from those rows. Churn risk and the 12-month value outlook are plain
+heuristics over each customer's own order history (their responses say `method`).
+
+**Reported as unavailable instead of invented:** Kafka/Spark/Redis status (probed over TCP; not deployed here),
+marketing spend and CAC, revenue targets, market share, external-service latency.
+
+### 🌐 Running the website locally
+
+Requires the steps above (venv, JDK not needed for the website). Two terminals:
 
 ```powershell
+# One-time: create and fill the local SQLite database (data/ecap.db, ~10 seconds)
+python scripts/seed_database.py
+
 # Terminal 1 - API on http://127.0.0.1:8000 (docs at /docs)
-$env:ECAP_DATABASE_URL = "sqlite:///./ecap_local.db"
-python -m uvicorn src.api.main:app --host 127.0.0.1 --port 8000
+python scripts/run_api.py
 
 # Terminal 2 - dashboard on http://localhost:8501
 python -m streamlit run src/dashboard/main.py --server.port 8501
+
+# Optional, Terminal 3 - live traffic so the real-time pages move
+python scripts/simulate_live.py --orders-per-minute 10
 ```
 
-Log in to the dashboard with `admin` / `admin123`. The dashboard calls the API with its own service
-account (the API's development user, `admin` / `secret`); override it with `DASHBOARD_API_USERNAME`
-and `DASHBOARD_API_PASSWORD`, and the API URL with `DASHBOARD_API_BASE_URL`.
+Log in to the dashboard with `admin` / `admin123`. The dashboard calls the API with its own service account
+(the API's development user, `admin` / `secret`); override with `DASHBOARD_API_USERNAME`,
+`DASHBOARD_API_PASSWORD` and `DASHBOARD_API_BASE_URL`.
+
+### ☁️ Using Supabase (hosted PostgreSQL) instead of SQLite
+
+1. Create a Supabase project (free plan is enough). In **Connect → Session pooler** copy the connection string.
+2. Put it in your local, git-ignored `.env`, with the password URL-encoded:
+
+   ```
+   ECAP_SUPABASE_URL=postgresql+psycopg2://postgres.<project-ref>:<password>@aws-0-<region>.pooler.supabase.com:5432/postgres?sslmode=require
+   ```
+
+3. Fill it and start the API against it:
+
+   ```powershell
+   python scripts/seed_database.py --supabase      # drops and recreates the ECAP tables in that database
+   python scripts/run_api.py --db supabase
+   python scripts/simulate_live.py --supabase      # optional
+   ```
+
+The same code runs on both databases (`ECAP_DATABASE_URL` selects one for any other entry point). Use the *session
+pooler* (IPv4); the direct connection is IPv6-only. Turn off the Data API / auto-exposure when creating the
+project: the app connects straight to Postgres and does not need Supabase's REST layer.
 
 Tip: `pyspark` is a ~300 MB download; if `poetry install` is interrupted, run
 `pip install pyspark==3.4.4` and then `poetry install` again.

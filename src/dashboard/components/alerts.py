@@ -139,7 +139,7 @@ def render_fraud_alerts(fraud_data: Dict[str, Any]) -> None:
     alerts = fraud_data.get("alerts", [])
 
     # High-level fraud alerts
-    fraud_rate = summary.get("fraud_rate", 0)
+    fraud_rate = summary.get("fraud_rate") or 0
     if fraud_rate > 0.02:  # > 2%
         render_alert(
             f"🚨 High fraud rate detected: {format_percentage(fraud_rate)}",
@@ -154,7 +154,7 @@ def render_fraud_alerts(fraud_data: Dict[str, Any]) -> None:
         )
 
     # False positive rate alert
-    fp_rate = summary.get("false_positive_rate", 0)
+    fp_rate = summary.get("false_positive_rate") or 0
     if fp_rate > 0.15:  # > 15%
         render_alert(
             f"⚠️ High false positive rate: {format_percentage(fp_rate)}",
@@ -165,7 +165,7 @@ def render_fraud_alerts(fraud_data: Dict[str, Any]) -> None:
     # Critical priority alerts
     by_priority = _alert_counts_by_priority(alerts)
 
-    critical_count = by_priority.get("critical", 0)
+    critical_count = by_priority.get("critical") or 0
     if critical_count:
         render_alert(
             f"🚨 {critical_count} critical fraud alerts require immediate attention",
@@ -174,7 +174,7 @@ def render_fraud_alerts(fraud_data: Dict[str, Any]) -> None:
         )
 
     # High priority alerts
-    high_count = by_priority.get("high", 0)
+    high_count = by_priority.get("high") or 0
     if high_count:
         render_alert(
             f"⚠️ {high_count} high priority fraud alerts pending",
@@ -198,9 +198,9 @@ def render_business_alerts(business_data: Dict[str, Any]) -> None:
         sales = business_data["sales"]
         revenue = sales.get("revenue", {})
 
-        current_revenue = revenue.get("current", 0)
-        target_revenue = revenue.get("target", 0)
-        growth_rate = revenue.get("growth_rate", 0)
+        current_revenue = revenue.get("current") or 0
+        target_revenue = revenue.get("target") or 0
+        growth_rate = revenue.get("growth_rate") or 0
 
         # Revenue vs target
         if target_revenue > 0:
@@ -231,7 +231,7 @@ def render_business_alerts(business_data: Dict[str, Any]) -> None:
         customer = business_data["customer"]
         engagement = customer.get("engagement", {})
 
-        bounce_rate = engagement.get("bounce_rate", 0)
+        bounce_rate = engagement.get("bounce_rate") or 0
         if bounce_rate > 0.6:  # > 60%
             render_alert(
                 f"⚠️ High bounce rate: {format_percentage(bounce_rate)}",
@@ -245,7 +245,7 @@ def render_business_alerts(business_data: Dict[str, Any]) -> None:
         stock_levels = inventory.get("stock_levels", {})
         alerts_list = inventory.get("alerts", [])
 
-        out_of_stock = stock_levels.get("out_of_stock", 0)
+        out_of_stock = stock_levels.get("out_of_stock") or 0
         if out_of_stock > 50:
             render_alert(
                 f"📦 {out_of_stock} products out of stock",
@@ -278,8 +278,8 @@ def render_performance_alerts(performance_data: Dict[str, Any]) -> None:
         latency = performance_data["latency"]
         api_times = latency.get("api_response_times", {})
 
-        p95_time = api_times.get("p95_ms", 0)
-        sla_target = api_times.get("sla_target_ms", 200)
+        p95_time = api_times.get("p95_ms") or 0
+        sla_target = api_times.get("sla_target_ms") or 200
 
         if p95_time > sla_target * 2:  # > 2x SLA
             render_alert(
@@ -299,9 +299,9 @@ def render_performance_alerts(performance_data: Dict[str, Any]) -> None:
         throughput = performance_data["throughput"]
         rps = throughput.get("requests_per_second", {})
 
-        current_rps = rps.get("current", 0)
+        current_rps = rps.get("current") or 0
         capacity_limit = rps.get("capacity_limit", 5000)
-        utilization = rps.get("utilization", 0)
+        utilization = rps.get("utilization") or 0
 
         if utilization > 0.9:  # > 90%
             render_alert(
@@ -321,7 +321,7 @@ def render_performance_alerts(performance_data: Dict[str, Any]) -> None:
         reliability = performance_data["reliability"]
         error_rates = reliability.get("error_rates", {})
 
-        http_5xx_rate = error_rates.get("http_5xx_rate", 0)
+        http_5xx_rate = error_rates.get("http_5xx_rate") or 0
         if http_5xx_rate > 0.01:  # > 1%
             render_alert(
                 f"🚨 High server error rate: {format_percentage(http_5xx_rate)}",
@@ -357,7 +357,7 @@ def render_data_quality_alerts(stream_data: Dict[str, Any]) -> None:
 
     # Anomaly detection
     anomaly_detection = data_quality.get("anomaly_detection", {})
-    anomaly_rate = anomaly_detection.get("anomaly_rate", 0)
+    anomaly_rate = anomaly_detection.get("anomaly_rate") or 0
 
     if anomaly_rate > 0.05:  # > 5%
         render_alert(

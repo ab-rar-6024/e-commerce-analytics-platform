@@ -64,6 +64,21 @@ async def lifespan(app: FastAPI):
         logger.error(f"Database connection validation failed: {e}")
         raise
 
+    # Pre-compute the heavy dashboard queries in the background so the first page load is fast
+    try:
+        import asyncio
+
+        from .dependencies import get_session_local
+        from .repositories.warmup import warm_up
+
+        def _warm() -> None:
+            with get_session_local()() as session:
+                logger.info(f"Dashboard cache warmed in {warm_up(session):.1f}s")
+
+        asyncio.get_running_loop().run_in_executor(None, _warm)
+    except Exception as e:
+        logger.warning(f"Cache warm-up not started: {e}")
+
     # Validate Redis connection
     try:
         from .dependencies import validate_redis_connection

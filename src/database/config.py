@@ -34,6 +34,8 @@ class DatabaseSettings(BaseSettings):
         env_file = ".env"
         case_sensitive = False
         env_prefix = "DB_"
+        # .env also holds settings for other components; ignore keys that are not ours
+        extra = "ignore"
 
     @property
     def database_url(self) -> str:

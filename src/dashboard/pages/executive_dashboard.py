@@ -27,91 +27,6 @@ from dashboard.utils.api_client import APIError, handle_api_error
 from dashboard.utils.data_processing import format_currency
 
 
-def generate_executive_mock_data() -> Dict[str, Any]:
-    """Generate enhanced mock data for executive dashboard views."""
-
-    # Executive KPI data
-    executive_kpis = {
-        "total_revenue": 12_500_000,
-        "revenue_growth": 15.2,
-        "market_share": 8.5,
-        "market_share_change": 0.3,
-        "customer_satisfaction": 4.2,
-        "satisfaction_change": 0.1,
-        "profit_margin": 18.5,
-        "margin_change": 1.2,
-        "goal_achievement": 92.0,
-    }
-
-    # Geographic sales data
-    geographic_data = [
-        {"location": "US", "revenue": 4_200_000, "country": "United States"},
-        {"location": "CA", "revenue": 2_100_000, "country": "Canada"},
-        {"location": "GB", "revenue": 1_800_000, "country": "United Kingdom"},
-        {"location": "DE", "revenue": 1_500_000, "country": "Germany"},
-        {"location": "FR", "revenue": 1_200_000, "country": "France"},
-        {"location": "AU", "revenue": 800_000, "country": "Australia"},
-        {"location": "JP", "revenue": 600_000, "country": "Japan"},
-        {"location": "BR", "revenue": 400_000, "country": "Brazil"},
-    ]
-
-    # Executive revenue performance data
-    revenue_performance = {
-        "yoy_comparison": {
-            "previous_year": 10_800_000,
-            "current_year": 12_500_000,
-            "growth_amount": 1_700_000,
-        },
-        "profit_trends": [
-            {"period": "Q1", "revenue": 2_800_000, "profit_margin": 16.2},
-            {"period": "Q2", "revenue": 3_100_000, "profit_margin": 17.8},
-            {"period": "Q3", "revenue": 3_300_000, "profit_margin": 18.9},
-            {"period": "Q4", "revenue": 3_300_000, "profit_margin": 19.2},
-        ],
-        "channel_performance": [
-            {"channel": "Online", "revenue": 7_500_000, "growth_rate": 18.5},
-            {"channel": "Mobile", "revenue": 3_200_000, "growth_rate": 25.2},
-            {"channel": "Retail", "revenue": 1_800_000, "growth_rate": 8.1},
-        ],
-    }
-
-    # Executive customer analytics data
-    customer_analytics = {
-        "acquisition_trends": [
-            {"period": "Jan", "customer_acquisition_cost": 45.20},
-            {"period": "Feb", "customer_acquisition_cost": 42.80},
-            {"period": "Mar", "customer_acquisition_cost": 38.90},
-            {"period": "Apr", "customer_acquisition_cost": 41.20},
-            {"period": "May", "customer_acquisition_cost": 39.50},
-            {"period": "Jun", "customer_acquisition_cost": 37.10},
-        ],
-        "clv_distribution": [
-            {"clv_range": "$0-100", "customer_count": 15_200},
-            {"clv_range": "$100-500", "customer_count": 28_500},
-            {"clv_range": "$500-1000", "customer_count": 12_800},
-            {"clv_range": "$1000-2000", "customer_count": 5_200},
-            {"clv_range": "$2000+", "customer_count": 1_800},
-        ],
-        "retention_data": [
-            {"cohort_period": "Month 1", "retention_rate": 0.82},
-            {"cohort_period": "Month 2", "retention_rate": 0.68},
-            {"cohort_period": "Month 3", "retention_rate": 0.55},
-            {"cohort_period": "Month 6", "retention_rate": 0.42},
-            {"cohort_period": "Month 12", "retention_rate": 0.28},
-        ],
-        "churn_analysis": {
-            "current_churn_rate": 0.065,  # 6.5% monthly churn
-        },
-    }
-
-    return {
-        "executive_kpis": executive_kpis,
-        "geographic_data": geographic_data,
-        "revenue_performance": revenue_performance,
-        "customer_analytics": customer_analytics,
-    }
-
-
 @handle_api_error
 def load_executive_data() -> Dict[str, Any]:
     """Load data for executive dashboard."""
@@ -148,7 +63,7 @@ def load_executive_data() -> Dict[str, Any]:
 
         # Load real-time business metrics
         data["business_metrics"] = api_client.get_business_metrics(
-            metric_category="all", time_window="1h"
+            metric_category="all", time_window="24h"
         )
 
         # Load fraud dashboard summary
@@ -159,9 +74,8 @@ def load_executive_data() -> Dict[str, Any]:
         # Load system health
         data["system_health"] = api_client.get_system_health(include_details=False)
 
-        # Add executive-specific mock data
-        executive_mock_data = generate_executive_mock_data()
-        data.update(executive_mock_data)
+        # Executive KPIs and breakdowns, computed from stored orders
+        data.update(api_client.get_executive_overview(days=90))
 
     except APIError as e:
         st.error(f"Failed to load data: {e.message}")

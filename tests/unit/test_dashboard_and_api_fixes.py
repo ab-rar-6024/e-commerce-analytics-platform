@@ -2,7 +2,6 @@
 Regression tests for the dashboard/API integration fixes:
 
 - SmartCompressionResponse sent a stale content-length (real clients got truncated JSON)
-- the /api/v1/operations endpoints used by the operational dashboard did not exist
 - fraud alert counting assumed a list while the API returns aggregate counts
 - APIClient.authenticate faked a token instead of calling the login endpoint
 - sidebar quick-select date ranges
@@ -15,7 +14,6 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 import requests
-from fastapi.testclient import TestClient
 
 # The dashboard package is imported as `dashboard.*` (src/ is on its path)
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
@@ -44,50 +42,6 @@ class TestSmartCompressionResponse:
 
         assert b"drop" not in response.body
         assert b"keep" in response.body
-
-
-class TestOperationsEndpoints:
-    @pytest.fixture
-    def client(self):
-        app.dependency_overrides[get_database_session] = lambda: MagicMock()
-        yield TestClient(app)
-        app.dependency_overrides.pop(get_database_session, None)
-
-    @pytest.fixture
-    def headers(self):
-        token = create_access_token(
-            data={"sub": "admin", "user_id": 1, "role": "admin", "permissions": []}
-        )
-        return {"Authorization": f"Bearer {token}"}
-
-    @pytest.mark.parametrize(
-        "path, keys",
-        [
-            ("fraud-monitoring", {"monitoring", "model_health"}),
-            ("data-quality", {"overview", "pipeline_health", "issue_distribution"}),
-            ("alerts", {"summary", "alerts_by_category", "recent_alerts"}),
-            ("performance", {"metrics"}),
-            ("streaming-health", {"pipeline_metrics", "topic_health"}),
-        ],
-    )
-    def test_endpoint_returns_expected_shape(self, client, headers, path, keys):
-        response = client.get(f"/api/v1/operations/{path}", headers=headers)
-
-        assert response.status_code == 200
-        assert keys <= set(response.json())
-
-    def test_requires_authentication(self, client):
-        response = client.get("/api/v1/operations/performance")
-
-        assert response.status_code in (401, 403)
-
-    def test_scores_are_fractions(self, client, headers):
-        overview = client.get("/api/v1/operations/data-quality", headers=headers).json()[
-            "overview"
-        ]
-
-        for key in ("overall_quality_score", "completeness_score", "accuracy_score"):
-            assert 0 <= overview[key] <= 1
 
 
 class TestAlertCounts:

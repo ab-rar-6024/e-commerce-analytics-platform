@@ -64,8 +64,11 @@ def load_real_time_data() -> Dict[str, Any]:
 
         # Load fraud dashboard for alerts
         data["fraud_dashboard"] = api_client.get_fraud_dashboard(
-            time_range="1h", include_predictions=False
+            time_range="24h", include_predictions=False
         )
+
+        # Recent orders, hourly volume and regional split
+        data["activity"] = api_client.get_activity(hours=24, limit=10)
 
     except APIError as e:
         st.error(f"Failed to load real-time data: {e.message}")
@@ -74,7 +77,9 @@ def load_real_time_data() -> Dict[str, Any]:
     return data
 
 
-def render_live_transaction_feed(business_data: Dict[str, Any]) -> None:
+def render_live_transaction_feed(
+    business_data: Dict[str, Any], activity: Dict[str, Any] = None
+) -> None:
     """Render live transaction feed with key metrics."""
     st.header("💳 Live Transaction Feed")
 
@@ -125,36 +130,35 @@ def render_live_transaction_feed(business_data: Dict[str, Any]) -> None:
             help_text="Average order value",
         )
 
-    # Recent transactions table (simulated)
+    # Recent transactions: the newest orders in the database
     st.subheader("Recent Transactions")
 
-    # Generate sample transaction data
-    transactions = []
-    for i in range(10):
-        transaction = {
-            "Transaction ID": f"TRX{i+1:05d}",
-            "Amount": round(current_revenue * (0.01 + 0.05 * (i % 5)), 2),
-            "Status": "Completed" if i % 4 != 0 else "Pending",
-            "Payment Method": [
-                "Credit Card",
-                "PayPal",
-                "Bank Transfer",
-                "Digital Wallet",
-            ][i % 4],
-            "Time": (datetime.now() - timedelta(minutes=i * 2)).strftime("%H:%M:%S"),
-        }
-        transactions.append(transaction)
-
-    df = pd.DataFrame(transactions)
-
-    st.dataframe(
-        df,
-        column_config={
-            "Amount": st.column_config.NumberColumn("Amount", format="$%.2f")
-        },
-        hide_index=True,
-        use_container_width=True,
-    )
+    transactions = (activity or {}).get("recent_transactions", [])
+    if transactions:
+        df = pd.DataFrame(
+            [
+                {
+                    "Transaction ID": t["transaction_id"],
+                    "Amount": t["amount"],
+                    "Status": t["status"].title(),
+                    "Payment Method": t["payment_method"],
+                    "Channel": t["channel"],
+                    "Region": t["region"],
+                    "Time": t["time"],
+                }
+                for t in transactions
+            ]
+        )
+        st.dataframe(
+            df,
+            column_config={
+                "Amount": st.column_config.NumberColumn("Amount", format="$%.2f")
+            },
+            hide_index=True,
+            use_container_width=True,
+        )
+    else:
+        st.info("No orders recorded yet")
 
 
 def render_fraud_detection_alerts(fraud_data: Dict[str, Any]) -> None:
@@ -414,74 +418,47 @@ def render_error_rate_monitoring(performance_data: Dict[str, Any]) -> None:
             help_text="Database error rate",
         )
 
-    # Error rate trend chart
-    st.subheader("Error Rate Trends")
-
-    # Generate sample time series data for error rates
-    hours = list(range(24))
-    error_data = []
-    for hour in hours:
-        error_data.append(
-            {
-                "hour": f"{hour:02d}:00",
-                "4xx_errors": http_4xx_rate * (0.8 + 0.4 * (hour % 5)),
-                "5xx_errors": http_5xx_rate * (0.7 + 0.5 * (hour % 4)),
-                "timeouts": timeout_rate * (0.9 + 0.3 * (hour % 3)),
-            }
-        )
-
-    render_line_chart(
-        data=error_data,
-        x_column="hour",
-        y_column="4xx_errors",
-        title="Error Rate Over Time",
-        color_column=None,
-        height=400,
+    st.caption(
+        "Rates cover requests since the API process started; no error history is stored."
     )
 
 
-def render_transaction_volume_chart(business_data: Dict[str, Any]) -> None:
-    """Render real-time charts showing transaction volume over time."""
+def render_transaction_volume_chart(activity: Dict[str, Any]) -> None:
+    """Orders and revenue per hour over the last 24 hours."""
     st.header("📈 Transaction Volume")
 
-    if not business_data:
-        st.warning("No business data available")
+    hourly = (activity or {}).get("hourly", [])
+    if not hourly:
+        st.warning("No order activity available")
         return
 
-    # Generate sample time series data for transaction volume
-    hours = list(range(24))
-    volume_data = []
-    base_volume = 1000
-    for hour in hours:
-        volume_data.append(
-            {
-                "hour": f"{hour:02d}:00",
-                "transactions": base_volume * (0.7 + 0.6 * (hour % 8) / 8),
-            }
+    col1, col2 = st.columns(2)
+    with col1:
+        render_bar_chart(
+            data=hourly,
+            x_column="hour",
+            y_column="orders",
+            title="Orders per Hour (24h)",
+            height=350,
+        )
+    with col2:
+        render_bar_chart(
+            data=hourly,
+            x_column="hour",
+            y_column="revenue",
+            title="Revenue per Hour (24h)",
+            height=350,
         )
 
-    render_bar_chart(
-        data=volume_data,
-        x_column="hour",
-        y_column="transactions",
-        title="Transaction Volume by Hour",
-        height=400,
-    )
 
-
-def render_geographical_distribution() -> None:
-    """Render geographical distribution of transactions."""
+def render_geographical_distribution(activity: Dict[str, Any]) -> None:
+    """Orders by customer region over the last 24 hours."""
     st.header("🌍 Geographical Distribution")
 
-    # Sample geographical data
-    geo_data = [
-        {"region": "North America", "transactions": 45000, "percentage": 0.35},
-        {"region": "Europe", "transactions": 32000, "percentage": 0.25},
-        {"region": "Asia", "transactions": 28000, "percentage": 0.22},
-        {"region": "South America", "transactions": 12000, "percentage": 0.09},
-        {"region": "Africa", "transactions": 8000, "percentage": 0.06},
-        {"region": "Oceania", "transactions": 3000, "percentage": 0.03},
-    ]
+    geo_data = (activity or {}).get("regions", [])
+    if not geo_data:
+        st.info("No orders in the last 24 hours")
+        return
 
     col1, col2 = st.columns(2)
 
@@ -490,7 +467,7 @@ def render_geographical_distribution() -> None:
             data=geo_data,
             values_column="transactions",
             names_column="region",
-            title="Transactions by Region",
+            title="Orders by Region (24h)",
             height=400,
         )
 
@@ -499,9 +476,7 @@ def render_geographical_distribution() -> None:
         st.dataframe(
             df,
             column_config={
-                "transactions": st.column_config.NumberColumn(
-                    "Transactions", format="%d"
-                ),
+                "transactions": st.column_config.NumberColumn("Orders", format="%d"),
                 "percentage": st.column_config.NumberColumn(
                     "Percentage", format="%.1f%%"
                 ),
@@ -541,25 +516,20 @@ def render_fraud_detection_rate(fraud_data: Dict[str, Any]) -> None:
         )
 
     with col2:
-        # Generate sample trend data
-        hours = list(range(24))
-        trend_data = []
-        base_rate = fraud_rate
-        for hour in hours:
-            trend_data.append(
-                {
-                    "hour": f"{hour:02d}:00",
-                    "fraud_rate": base_rate * (0.8 + 0.4 * (hour % 6) / 6),
-                }
+        hourly_alerts = trends.get("hourly_alerts", [])
+        if hourly_alerts:
+            render_bar_chart(
+                data=[
+                    {"hour": f"{h['hour']:02d}:00", "alerts": h["alerts"]}
+                    for h in hourly_alerts
+                ],
+                x_column="hour",
+                y_column="alerts",
+                title="Fraud Alerts per Hour (24h)",
+                height=300,
             )
-
-        render_line_chart(
-            data=trend_data,
-            x_column="hour",
-            y_column="fraud_rate",
-            title="Fraud Rate Trend",
-            height=300,
-        )
+        else:
+            st.info("No alert history available")
 
 
 def render_system_health_indicators(system_data: Dict[str, Any]) -> None:
@@ -706,9 +676,10 @@ def render() -> None:
     business_metrics = data.get("business_metrics", {})
     performance = data.get("performance", {})
     fraud_dashboard = data.get("fraud_dashboard", {})
+    activity = data.get("activity", {})
 
     # Live transaction feed
-    render_live_transaction_feed(business_metrics)
+    render_live_transaction_feed(business_metrics, activity)
 
     st.markdown("---")
 
@@ -728,12 +699,12 @@ def render() -> None:
     st.markdown("---")
 
     # Transaction volume chart
-    render_transaction_volume_chart(business_metrics)
+    render_transaction_volume_chart(activity)
 
     st.markdown("---")
 
     # Geographical distribution
-    render_geographical_distribution()
+    render_geographical_distribution(activity)
 
     st.markdown("---")
 

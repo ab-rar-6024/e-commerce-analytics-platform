@@ -121,25 +121,25 @@ def render_operational_overview(system_health: Dict[str, Any]) -> None:
 
     with col2:
         api_health = core_metrics.get("api_server", {})
-        response_time = api_health.get("response_time_p95_ms", 0)
+        response_time = api_health.get("response_time_p95_ms")
         st.metric(
             "API Response (P95)",
-            f"{response_time:.0f}ms",
+            _na(response_time, ".0f", "ms"),
             help="95th percentile API response time",
         )
 
     with col3:
-        throughput = system_health.get("throughput_rps", 0)
-        st.metric("Throughput", f"{throughput:,.0f} RPS", help="Requests per second")
+        throughput = system_health.get("throughput_rps")
+        st.metric("Throughput", _na(throughput, ",.2f", " req/s"), help="Requests per second since start")
 
     with col4:
-        error_rate = system_health.get("error_rate", 0)
+        error_rate = system_health.get("error_rate") or 0
         delta_color = "inverse" if error_rate > 0.01 else "normal"
         st.metric(
             "Error Rate",
             format_percentage(error_rate),
             delta_color=delta_color,
-            help="System-wide error rate",
+            help="Share of API requests that returned 5xx",
         )
 
     with col5:
@@ -401,8 +401,13 @@ def render_data_quality_monitoring(data_quality: Dict[str, Any]) -> None:
                     "Pipeline": pipeline.get("name", ""),
                     "Status": pipeline.get("status", "").title(),
                     "Last Run": pipeline.get("last_run", ""),
-                    "Success Rate": format_percentage(pipeline.get("success_rate", 0)),
-                    "Avg Duration": f"{pipeline.get('avg_duration_minutes', 0):.1f}m",
+                    "Success Rate": format_percentage(pipeline.get("success_rate") or 0),
+                    "Lag (h)": _na(
+                        None
+                        if pipeline.get("lag_seconds") is None
+                        else pipeline["lag_seconds"] / 3600,
+                        ".1f",
+                    ),
                     "Data Volume": format_large_number(
                         pipeline.get("records_processed", 0)
                     ),
@@ -416,26 +421,10 @@ def render_data_quality_monitoring(data_quality: Dict[str, Any]) -> None:
     col1, col2 = st.columns(2)
 
     with col1:
-        st.subheader("Quality Score Trends")
-
-        # Generate sample trend data
-        hours = list(range(24))
-        quality_trends = []
-        base_score = overall_score
-        for hour in hours:
-            quality_trends.append(
-                {
-                    "hour": f"{hour:02d}:00",
-                    "quality_score": base_score * (0.95 + 0.1 * ((hour + 1) % 6) / 6),
-                }
-            )
-
-        render_line_chart(
-            data=quality_trends,
-            x_column="hour",
-            y_column="quality_score",
-            title="Data Quality Score (24h)",
-            height=300,
+        st.subheader("Quality Score")
+        st.info(
+            "Quality history is not stored; the score above is computed from the "
+            "current integrity checks."
         )
 
     with col2:
@@ -488,19 +477,19 @@ def render_alert_notification_panel(alerts_data: Dict[str, Any]) -> None:
         )
 
     with col3:
-        resolved_24h = alert_summary.get("resolved_last_24h", 0)
+        info_alerts = alert_summary.get("info", 0)
         st.metric(
-            "Resolved (24h)",
-            f"{resolved_24h:,}",
-            help="Alerts resolved in last 24 hours",
+            "Info Notices",
+            f"{info_alerts:,}",
+            help="Informational notices (e.g. optional services not configured)",
         )
 
     with col4:
-        avg_resolution_time = alert_summary.get("avg_resolution_time_minutes", 0)
+        avg_resolution_time = alert_summary.get("avg_resolution_time_minutes")
         st.metric(
             "Avg Resolution Time",
-            f"{avg_resolution_time:.1f}m",
-            help="Average time to resolve alerts",
+            _na(avg_resolution_time, ".1f", "m"),
+            help="Not tracked: alerts here are derived from live measurements",
         )
 
     # Active alerts by category
@@ -564,86 +553,45 @@ def render_performance_monitoring(performance_data: Dict[str, Any]) -> None:
     col1, col2, col3, col4 = st.columns(4)
 
     with col1:
-        api_p95 = metrics.get("api_response_p95_ms", 0)
-        delta_color = "inverse" if api_p95 > 200 else "normal"
+        api_p95 = metrics.get("api_response_p95_ms")
+        delta_color = "inverse" if (api_p95 or 0) > 500 else "normal"
         st.metric(
             "API P95 Latency",
-            f"{api_p95:.0f}ms",
+            _na(api_p95, ".0f", "ms"),
             delta_color=delta_color,
             help="95th percentile API response time",
         )
 
     with col2:
-        db_p95 = metrics.get("database_query_p95_ms", 0)
-        delta_color = "inverse" if db_p95 > 100 else "normal"
+        db_p95 = metrics.get("database_query_p95_ms")
+        delta_color = "inverse" if (db_p95 or 0) > 150 else "normal"
         st.metric(
-            "DB Query P95",
-            f"{db_p95:.0f}ms",
+            "DB Round-trip P95",
+            _na(db_p95, ".1f", "ms"),
             delta_color=delta_color,
             help="95th percentile database query time",
         )
 
     with col3:
-        kafka_lag = metrics.get("kafka_consumer_lag", 0)
-        delta_color = "inverse" if kafka_lag > 1000 else "normal"
+        kafka_lag = metrics.get("kafka_consumer_lag")
+        delta_color = "inverse" if (kafka_lag or 0) > 1000 else "normal"
         st.metric(
             "Kafka Consumer Lag",
-            f"{kafka_lag:,}",
+            _na(kafka_lag),
             delta_color=delta_color,
             help="Current Kafka consumer lag",
         )
 
     with col4:
-        spark_jobs = metrics.get("spark_active_jobs", 0)
+        spark_jobs = metrics.get("spark_active_jobs")
         st.metric(
-            "Active Spark Jobs", f"{spark_jobs:,}", help="Number of active Spark jobs"
+            "Active Spark Jobs", _na(spark_jobs), help="Requires a Spark cluster (not configured)"
         )
 
-    # Performance trends
-    col1, col2 = st.columns(2)
-
-    with col1:
-        st.subheader("Response Time Trends")
-
-        # Generate sample performance trend data
-        hours = list(range(24))
-        perf_trends = []
-        for hour in hours:
-            perf_trends.append(
-                {
-                    "hour": f"{hour:02d}:00",
-                    "api_response": api_p95 * (0.8 + 0.4 * (hour % 8) / 8),
-                    "db_query": db_p95 * (0.9 + 0.2 * (hour % 6) / 6),
-                }
-            )
-
-        render_time_series_chart(
-            data=perf_trends,
-            date_column="hour",
-            value_columns=["api_response", "db_query"],
-            title="Response Time Trends (24h)",
-            height=300,
-        )
-
-    with col2:
-        st.subheader("Throughput Monitoring")
-
-        throughput_data = []
-        for hour in hours:
-            throughput_data.append(
-                {
-                    "hour": f"{hour:02d}:00",
-                    "requests_per_second": 1000 * (0.6 + 0.8 * (hour % 12) / 12),
-                }
-            )
-
-        render_bar_chart(
-            data=throughput_data,
-            x_column="hour",
-            y_column="requests_per_second",
-            title="Throughput (RPS) - 24h",
-            height=300,
-        )
+    st.caption(
+        "API figures cover requests since the API process started. "
+        "Kafka and Spark metrics need those services to be deployed."
+    )
 
 
 def render_streaming_pipeline_health(streaming_data: Dict[str, Any]) -> None:
@@ -660,23 +608,23 @@ def render_streaming_pipeline_health(streaming_data: Dict[str, Any]) -> None:
     col1, col2, col3, col4 = st.columns(4)
 
     with col1:
-        throughput = pipeline_metrics.get("messages_per_second", 0)
+        throughput = pipeline_metrics.get("messages_per_second")
         st.metric(
-            "Messages/Second", f"{throughput:,.0f}", help="Current streaming throughput"
+            "Messages/Second", _na(throughput, ",.3f"), help="New rows per second over the last 15 minutes"
         )
 
     with col2:
-        processing_lag = pipeline_metrics.get("processing_lag_seconds", 0)
-        delta_color = "inverse" if processing_lag > 10 else "normal"
+        processing_lag = pipeline_metrics.get("processing_lag_seconds")
+        delta_color = "inverse" if (processing_lag or 0) > 3600 else "normal"
         st.metric(
-            "Processing Lag",
-            f"{processing_lag:.1f}s",
+            "Data Lag",
+            _na(None if processing_lag is None else processing_lag / 3600, ".1f", " h"),
             delta_color=delta_color,
             help="Current processing lag",
         )
 
     with col3:
-        error_rate = pipeline_metrics.get("error_rate", 0)
+        error_rate = pipeline_metrics.get("error_rate") or 0
         delta_color = "inverse" if error_rate > 0.01 else "normal"
         st.metric(
             "Error Rate",
@@ -686,10 +634,10 @@ def render_streaming_pipeline_health(streaming_data: Dict[str, Any]) -> None:
         )
 
     with col4:
-        active_consumers = pipeline_metrics.get("active_consumers", 0)
+        active_consumers = pipeline_metrics.get("active_consumers")
         st.metric(
             "Active Consumers",
-            f"{active_consumers:,}",
+            _na(active_consumers),
             help="Number of active stream consumers",
         )
 
@@ -702,12 +650,16 @@ def render_streaming_pipeline_health(streaming_data: Dict[str, Any]) -> None:
         for topic in topics:
             topic_data.append(
                 {
-                    "Topic": topic.get("name", ""),
+                    "Table": topic.get("name", ""),
                     "Status": topic.get("status", "").title(),
-                    "Messages/sec": f"{topic.get('messages_per_second', 0):,.0f}",
-                    "Consumer Lag": f"{topic.get('consumer_lag', 0):,}",
-                    "Partitions": f"{topic.get('partition_count', 0):,}",
-                    "Last Message": topic.get("last_message_time", ""),
+                    "Rows/sec (15m)": _na(topic.get("messages_per_second"), ",.4f"),
+                    "Newest row age (h)": _na(
+                        None
+                        if topic.get("lag_seconds") is None
+                        else topic["lag_seconds"] / 3600,
+                        ".1f",
+                    ),
+                    "Newest row": topic.get("last_message_time", ""),
                 }
             )
 
@@ -883,388 +835,184 @@ def render_drill_down_modal(drill_type: str, drill_data: Dict[str, Any]) -> None
                     st.rerun()
 
 
+def _na(value: Any, spec: str = ",.0f", suffix: str = "") -> str:
+    """Format a number, or 'n/a' when the source does not provide it."""
+    return "n/a" if value is None else f"{format(value, spec)}{suffix}"
+
+
+def _pct(value: Any) -> str:
+    return "n/a" if value is None else format_percentage(value)
+
+
 def render_system_health_drill_down(drill_data: Dict[str, Any]) -> None:
-    """Render system health drill-down details."""
+    """Render system health drill-down details (measured values only)."""
     st.markdown("#### System Health Detailed Analysis")
 
-    # Component timeline
-    st.subheader("📊 Component Performance Timeline")
+    if not drill_data:
+        st.info("No system health data available")
+        return
 
-    # Generate sample timeline data
-    hours = [f"{i:02d}:00" for i in range(24)]
-    timeline_data = []
+    host = drill_data.get("host", {})
+    st.subheader("🖥️ Host")
+    c1, c2, c3 = st.columns(3)
+    c1.metric("CPU", _na(host.get("cpu_percent"), ".1f", "%"))
+    c2.metric(
+        "Memory",
+        _na(host.get("memory_percent"), ".1f", "%"),
+        help=f"{_na(host.get('memory_used_mb'))} MB of {_na(host.get('memory_total_mb'))} MB",
+    )
+    c3.metric("Disk", _na((drill_data.get("core_metrics", {}).get("database", {})).get("disk_usage_percent"), ".1f", "%"))
 
-    for hour in hours:
-        timeline_data.append(
-            {
-                "Time": hour,
-                "API Server CPU": 45 + 20 * (int(hour[:2]) % 6) / 6,
-                "Database CPU": 35 + 15 * (int(hour[:2]) % 8) / 8,
-                "Kafka CPU": 25 + 10 * (int(hour[:2]) % 4) / 4,
-                "API Response Time": 150 + 100 * (int(hour[:2]) % 12) / 12,
-                "Database Query Time": 50 + 50 * (int(hour[:2]) % 8) / 8,
-            }
+    st.subheader("🧩 Components")
+    rows = []
+    for name, comp in drill_data.get("core_metrics", {}).items():
+        detail = comp.get("reason") or ", ".join(
+            f"{k.replace('_', ' ')}: {v}" for k, v in comp.items() if k != "status" and v is not None
         )
+        rows.append({"Component": name.replace("_", " ").title(), "Status": comp.get("status", "unknown"), "Details": detail})
+    st.dataframe(pd.DataFrame(rows), hide_index=True, use_container_width=True)
 
-    df_timeline = pd.DataFrame(timeline_data)
-
-    # CPU usage timeline
-    col1, col2 = st.columns(2)
-    with col1:
-        render_line_chart(
-            data=timeline_data,
-            x_column="Time",
-            y_column="API Server CPU",
-            title="API Server CPU Usage (24h)",
-            height=300,
-        )
-
-    with col2:
-        render_line_chart(
-            data=timeline_data,
-            x_column="Time",
-            y_column="Database CPU",
-            title="Database CPU Usage (24h)",
-            height=300,
-        )
-
-    # Detailed component metrics
-    st.subheader("🔧 Component Details")
-
-    components_detail = [
-        {
-            "Component": "API Server",
-            "Instance": "api-server-01",
-            "CPU": "67.2%",
-            "Memory": "4.2 GB",
-            "Disk": "45%",
-            "Network In": "125 MB/s",
-            "Network Out": "89 MB/s",
-            "Uptime": "15.2 days",
-            "Health Score": "94%",
-        },
-        {
-            "Component": "Database",
-            "Instance": "postgres-primary",
-            "CPU": "45.8%",
-            "Memory": "12.1 GB",
-            "Disk": "78%",
-            "Network In": "78 MB/s",
-            "Network Out": "156 MB/s",
-            "Uptime": "28.7 days",
-            "Health Score": "97%",
-        },
-        {
-            "Component": "Kafka",
-            "Instance": "kafka-broker-01",
-            "CPU": "23.4%",
-            "Memory": "8.5 GB",
-            "Disk": "34%",
-            "Network In": "234 MB/s",
-            "Network Out": "198 MB/s",
-            "Uptime": "12.1 days",
-            "Health Score": "99%",
-        },
-    ]
-
-    df_components = pd.DataFrame(components_detail)
-    st.dataframe(df_components, hide_index=True, use_container_width=True)
+    alerts = drill_data.get("alerts", [])
+    st.subheader("🔔 Active Conditions")
+    if alerts:
+        st.dataframe(pd.DataFrame(alerts), hide_index=True, use_container_width=True)
+    else:
+        st.success("No active warnings")
 
 
 def render_fraud_monitoring_drill_down(drill_data: Dict[str, Any]) -> None:
-    """Render fraud monitoring drill-down details."""
-    st.markdown("#### Fraud Detection Detailed Analysis")
+    """Render fraud monitoring drill-down: per-rule quality and recent alerts."""
+    st.markdown("#### Fraud Monitoring Detailed Analysis")
 
-    # Model performance breakdown
-    st.subheader("🤖 Model Performance Breakdown")
+    if not drill_data:
+        st.info("No fraud monitoring data available")
+        return
 
-    model_details = [
-        {
-            "Model": "Random Forest",
-            "Accuracy": "94.2%",
-            "Precision": "89.7%",
-            "Recall": "91.3%",
-            "F1-Score": "90.5%",
-            "Last Training": "2 hours ago",
-            "Data Points": "125K",
-            "Feature Count": 47,
-        },
-        {
-            "Model": "XGBoost",
-            "Accuracy": "92.8%",
-            "Precision": "87.4%",
-            "Recall": "89.1%",
-            "F1-Score": "88.2%",
-            "Last Training": "4 hours ago",
-            "Data Points": "125K",
-            "Feature Count": 52,
-        },
-        {
-            "Model": "Neural Network",
-            "Accuracy": "91.5%",
-            "Precision": "85.2%",
-            "Recall": "88.7%",
-            "F1-Score": "86.9%",
-            "Last Training": "6 hours ago",
-            "Data Points": "125K",
-            "Feature Count": 38,
-        },
-    ]
-
-    df_models = pd.DataFrame(model_details)
-    st.dataframe(df_models, hide_index=True, use_container_width=True)
-
-    # Alert trends
-    st.subheader("🚨 Fraud Alert Trends")
-
-    col1, col2 = st.columns(2)
-
-    with col1:
-        # Hourly alert distribution
-        alert_hours = [f"{i:02d}:00" for i in range(24)]
-        alert_counts = [15 + 25 * ((i + 1) % 8) / 8 for i in range(24)]
-
-        alert_trend_data = [
-            {"Hour": hour, "Alerts": count}
-            for hour, count in zip(alert_hours, alert_counts)
-        ]
-
-        render_bar_chart(
-            data=alert_trend_data,
-            x_column="Hour",
-            y_column="Alerts",
-            title="Fraud Alerts by Hour (24h)",
-            height=300,
+    model_health = drill_data.get("model_health", {})
+    st.subheader("🛡️ Detection Rules (measured against known outcomes)")
+    models = model_health.get("individual_models", [])
+    if models:
+        df = pd.DataFrame(models)
+        st.dataframe(
+            df.rename(columns={"name": "Rule", "accuracy": "Precision", "recall": "Recall"})[["Rule", "Precision", "Recall"]],
+            column_config={
+                "Precision": st.column_config.ProgressColumn("Precision", min_value=0, max_value=1, format="%.2f"),
+                "Recall": st.column_config.ProgressColumn("Recall", min_value=0, max_value=1, format="%.2f"),
+            },
+            hide_index=True,
+            use_container_width=True,
         )
+    else:
+        st.info("No rule statistics available")
 
-    with col2:
-        # Alert severity distribution
-        severity_data = [
-            {"Severity": "Critical", "Count": 8},
-            {"Severity": "High", "Count": 23},
-            {"Severity": "Medium", "Count": 45},
-            {"Severity": "Low", "Count": 12},
-        ]
-
-        render_pie_chart(
-            data=severity_data,
-            values_column="Count",
-            names_column="Severity",
-            title="Alert Severity Distribution",
-            height=300,
+    st.subheader("🔎 Highest-Priority Open Alerts")
+    api_client = st.session_state.get("api_client")
+    try:
+        alerts = api_client.get_fraud_alerts(status="open", size=10).get("alerts", []) if api_client else []
+    except Exception as exc:  # the drill-down is optional detail; keep the page up
+        st.warning(f"Could not load alerts: {exc}")
+        alerts = []
+    if alerts:
+        st.dataframe(
+            pd.DataFrame(
+                [
+                    {"Alert": a["alert_id"], "Priority": a["priority"], "Type": a["alert_type"], "Risk": a["risk_score"],
+                     "Amount": a["amount"], "Created": a["created_at"],
+                     "Rules": ", ".join(a["fraud_indicators"]["rules_triggered"])}
+                    for a in alerts
+                ]
+            ),
+            hide_index=True,
+            use_container_width=True,
         )
+    else:
+        st.success("No open alerts")
 
 
 def render_data_quality_drill_down(drill_data: Dict[str, Any]) -> None:
-    """Render data quality drill-down details."""
+    """Render data quality drill-down: every integrity check and table freshness."""
     st.markdown("#### Data Quality Detailed Analysis")
 
-    # Pipeline health details
-    st.subheader("🔄 Pipeline Health Details")
+    if not drill_data:
+        st.info("No data quality data available")
+        return
 
-    pipeline_details = [
-        {
-            "Pipeline": "Customer Data ETL",
-            "Status": "Healthy",
-            "Success Rate": "99.2%",
-            "Avg Runtime": "12.3 min",
-            "Last Run": "5 min ago",
-            "Records Processed": "2.3M",
-            "Error Count": 3,
-            "Data Quality Score": "97.8%",
-        },
-        {
-            "Pipeline": "Transaction Processing",
-            "Status": "Warning",
-            "Success Rate": "96.8%",
-            "Avg Runtime": "8.7 min",
-            "Last Run": "2 min ago",
-            "Records Processed": "5.7M",
-            "Error Count": 12,
-            "Data Quality Score": "94.2%",
-        },
-        {
-            "Pipeline": "Product Catalog Sync",
-            "Status": "Healthy",
-            "Success Rate": "98.9%",
-            "Avg Runtime": "4.2 min",
-            "Last Run": "1 min ago",
-            "Records Processed": "890K",
-            "Error Count": 1,
-            "Data Quality Score": "99.1%",
-        },
-    ]
-
-    df_pipelines = pd.DataFrame(pipeline_details)
-    st.dataframe(df_pipelines, hide_index=True, use_container_width=True)
-
-    # Quality metrics timeline
-    st.subheader("📈 Quality Metrics Timeline")
-
-    col1, col2 = st.columns(2)
-
-    with col1:
-        # Data completeness trend
-        completeness_data = [
-            {"Hour": f"{i:02d}:00", "Completeness": 95 + 4 * ((i + 1) % 6) / 6}
-            for i in range(24)
-        ]
-
-        render_line_chart(
-            data=completeness_data,
-            x_column="Hour",
-            y_column="Completeness",
-            title="Data Completeness (24h)",
-            height=300,
+    st.subheader("✅ Integrity Checks")
+    checks = drill_data.get("checks", {})
+    if checks:
+        st.dataframe(
+            pd.DataFrame(
+                [{"Check": k.replace("_", " ").title(), "Rows failing": n, "Result": "pass" if n == 0 else "fail"}
+                 for k, n in checks.items()]
+            ),
+            hide_index=True,
+            use_container_width=True,
         )
+        st.caption(f"{drill_data.get('rows_tested', 0):,} row checks evaluated")
 
-    with col2:
-        # Data accuracy trend
-        accuracy_data = [
-            {"Hour": f"{i:02d}:00", "Accuracy": 92 + 6 * ((i + 2) % 8) / 8}
-            for i in range(24)
-        ]
-
-        render_line_chart(
-            data=accuracy_data,
-            x_column="Hour",
-            y_column="Accuracy",
-            title="Data Accuracy (24h)",
-            height=300,
+    st.subheader("⏱️ Table Freshness")
+    pipelines = drill_data.get("pipeline_health", [])
+    if pipelines:
+        st.dataframe(
+            pd.DataFrame(
+                [{"Table": p["name"], "Status": p["status"], "Newest record": p["last_run"],
+                  "Age (hours)": None if p.get("lag_seconds") is None else round(p["lag_seconds"] / 3600, 1),
+                  "Rows": p["records_processed"]} for p in pipelines]
+            ),
+            hide_index=True,
+            use_container_width=True,
         )
 
 
 def render_performance_drill_down(drill_data: Dict[str, Any]) -> None:
-    """Render performance drill-down details."""
+    """Render performance drill-down: latency percentiles and per-endpoint statistics."""
     st.markdown("#### Performance Detailed Analysis")
 
-    # Endpoint performance breakdown
+    if not drill_data:
+        st.info("No performance data available")
+        return
+
+    api = drill_data.get("api", {})
+    st.subheader("🌐 API latency (since the API started)")
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("P50", _na(api.get("p50_ms"), ".0f", "ms"))
+    c2.metric("P90", _na(api.get("p90_ms"), ".0f", "ms"))
+    c3.metric("P95", _na(api.get("p95_ms"), ".0f", "ms"))
+    c4.metric("P99", _na(api.get("p99_ms"), ".0f", "ms"))
+
     st.subheader("🎯 API Endpoint Performance")
+    endpoints = drill_data.get("endpoints", [])
+    if endpoints:
+        st.dataframe(
+            pd.DataFrame(endpoints).rename(
+                columns={"endpoint": "Endpoint", "requests": "Requests", "avg_ms": "Avg (ms)", "p95_ms": "P95 (ms)",
+                         "error_rate": "Error rate"}
+            ),
+            hide_index=True,
+            use_container_width=True,
+        )
+    else:
+        st.info("No requests recorded yet")
 
-    endpoint_performance = [
-        {
-            "Endpoint": "/api/v1/customers",
-            "Avg Response (ms)": 125,
-            "P95 Response (ms)": 245,
-            "P99 Response (ms)": 450,
-            "Request Count": "15.2K",
-            "Error Rate": "0.3%",
-            "Throughput (RPS)": 45,
-        },
-        {
-            "Endpoint": "/api/v1/transactions",
-            "Avg Response (ms)": 89,
-            "P95 Response (ms)": 178,
-            "P99 Response (ms)": 320,
-            "Request Count": "28.7K",
-            "Error Rate": "0.1%",
-            "Throughput (RPS)": 78,
-        },
-        {
-            "Endpoint": "/api/v1/analytics/revenue",
-            "Avg Response (ms)": 1250,
-            "P95 Response (ms)": 2100,
-            "P99 Response (ms)": 3200,
-            "Request Count": "3.4K",
-            "Error Rate": "0.8%",
-            "Throughput (RPS)": 12,
-        },
-    ]
-
-    df_endpoints = pd.DataFrame(endpoint_performance)
-    st.dataframe(df_endpoints, hide_index=True, use_container_width=True)
-
-    # Database query performance
-    st.subheader("🗄️ Database Query Performance")
-
-    query_performance = [
-        {
-            "Query Type": "Customer Lookups",
-            "Avg Time (ms)": 45,
-            "Max Time (ms)": 156,
-            "Execution Count": "125K",
-            "Index Usage": "98.2%",
-        },
-        {
-            "Query Type": "Transaction Aggregates",
-            "Avg Time (ms)": 234,
-            "Max Time (ms)": 890,
-            "Execution Count": "34K",
-            "Index Usage": "89.7%",
-        },
-        {
-            "Query Type": "Analytics Reports",
-            "Avg Time (ms)": 1450,
-            "Max Time (ms)": 4200,
-            "Execution Count": "2.1K",
-            "Index Usage": "76.3%",
-        },
-    ]
-
-    df_queries = pd.DataFrame(query_performance)
-    st.dataframe(df_queries, hide_index=True, use_container_width=True)
+    db = drill_data.get("database", {})
+    st.subheader("🗄️ Database")
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Engine", str(db.get("engine", "n/a")))
+    c2.metric("Round-trip P95", _na(db.get("latency_p95_ms"), ".1f", "ms"))
+    c3.metric("Size", _na(db.get("size_mb"), ".1f", " MB"))
 
 
 def render_alerts_drill_down(drill_data: Dict[str, Any]) -> None:
-    """Render alerts drill-down details."""
+    """Render alerts drill-down: every active operational alert."""
     st.markdown("#### Alerts Detailed Analysis")
 
-    # Alert resolution timeline
-    st.subheader("⏱️ Alert Resolution Timeline")
-
-    recent_alerts_detailed = [
-        {
-            "Alert ID": "ALT-2024-001523",
-            "Timestamp": "2024-01-15 14:23:45",
-            "Severity": "Critical",
-            "Category": "System",
-            "Component": "API Server",
-            "Description": "High CPU usage detected (>90%)",
-            "Assigned To": "DevOps Team",
-            "Status": "Resolved",
-            "Resolution Time": "12 min",
-            "Actions Taken": "Scaled instances, optimized queries",
-        },
-        {
-            "Alert ID": "ALT-2024-001524",
-            "Timestamp": "2024-01-15 14:45:12",
-            "Severity": "Warning",
-            "Category": "Performance",
-            "Component": "Database",
-            "Description": "Query response time above threshold",
-            "Assigned To": "Database Team",
-            "Status": "In Progress",
-            "Resolution Time": "45 min",
-            "Actions Taken": "Analyzing query performance",
-        },
-        {
-            "Alert ID": "ALT-2024-001525",
-            "Timestamp": "2024-01-15 15:12:33",
-            "Severity": "High",
-            "Category": "Fraud",
-            "Component": "Fraud Detection",
-            "Description": "Unusual transaction pattern detected",
-            "Assigned To": "Security Team",
-            "Status": "Under Investigation",
-            "Resolution Time": "25 min",
-            "Actions Taken": "Reviewing transaction logs",
-        },
-    ]
-
-    df_alerts_detailed = pd.DataFrame(recent_alerts_detailed)
-    st.dataframe(df_alerts_detailed, hide_index=True, use_container_width=True)
-
-    # Alert statistics
-    col1, col2, col3 = st.columns(3)
-
-    with col1:
-        st.metric("Average Resolution Time", "18.5 min", "-2.3 min")
-
-    with col2:
-        st.metric("Resolution Rate", "94.2%", "+1.8%")
-
-    with col3:
-        st.metric("Escalated Alerts", "7", "-3")
+    alerts = (drill_data or {}).get("recent_alerts", [])
+    if not alerts:
+        st.success("No active alerts")
+        return
+    df = pd.DataFrame(alerts)
+    st.dataframe(df, hide_index=True, use_container_width=True)
+    st.caption("Alerts are derived from current measurements (host, database, API, data freshness and integrity).")
 
 
 def render_custom_alert_configuration() -> None:

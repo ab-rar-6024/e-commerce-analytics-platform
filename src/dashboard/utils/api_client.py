@@ -247,6 +247,14 @@ class APIClient:
 
     # Convenience methods for specific API endpoints
 
+    def get_activity(self, **kwargs) -> dict:
+        """Get recent orders, hourly volume and regional split."""
+        return self.get("/api/v1/realtime/activity", params=kwargs)
+
+    def get_executive_overview(self, **kwargs) -> dict:
+        """Get executive KPIs and breakdowns."""
+        return self.get("/api/v1/analytics/executive", params=kwargs)
+
     def get_revenue_analytics(self, **kwargs) -> dict:
         """Get revenue analytics data."""
         return self.get("/api/v1/analytics/revenue", params=kwargs)

@@ -7,10 +7,15 @@ with support for environment variables and validation.
 
 import os
 from functools import lru_cache
+from pathlib import Path
 from typing import List, Optional
 
 from pydantic import Field, validator
 from pydantic_settings import BaseSettings
+
+
+# Local development database (SQLite file; created and filled by scripts/seed_database.py)
+DEFAULT_DATABASE_URL = f"sqlite:///{(Path(__file__).resolve().parent.parent.parent / 'data' / 'ecap.db').as_posix()}"
 
 
 class Settings(BaseSettings):
@@ -49,14 +54,18 @@ class Settings(BaseSettings):
 
     # Database settings
     database_url: str = Field(
-        default="postgresql://ecap_user:ecap_password@localhost:5432/ecommerce_analytics",
-        description="Database connection URL",
+        default=DEFAULT_DATABASE_URL,
+        description=(
+            "Database connection URL: local SQLite by default; set ECAP_DATABASE_URL "
+            "to a postgresql+psycopg2://... URL (e.g. Supabase) for Postgres"
+        ),
     )
+    # Small pools suit hosted Postgres poolers (Supabase free tier allows ~15 clients)
     database_pool_size: int = Field(
-        default=20, description="Database connection pool size"
+        default=5, description="Database connection pool size"
     )
     database_max_overflow: int = Field(
-        default=30, description="Database max overflow connections"
+        default=5, description="Database max overflow connections"
     )
 
     # Redis settings
@@ -141,6 +150,8 @@ class Settings(BaseSettings):
             else None
         )
         env_file_encoding = "utf-8"
+        # .env also holds non-API settings (e.g. ECAP_SUPABASE_*); ignore unknown keys
+        extra = "ignore"
 
 
 @lru_cache()
@@ -241,7 +252,9 @@ def validate_configuration() -> bool:
                 raise ValueError("Debug mode should be disabled in production")
 
         # Validate database URL format
-        if not settings.database_url.startswith(("postgresql://", "sqlite:///")):
+        if not settings.database_url.startswith(
+            ("postgresql://", "postgresql+", "sqlite:///")
+        ):
             raise ValueError("Database URL must be PostgreSQL or SQLite")
 
         # Validate Redis URL format

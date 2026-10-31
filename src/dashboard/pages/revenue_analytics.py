@@ -307,10 +307,12 @@ def render_forecasting_analysis(revenue_data: Dict[str, Any]) -> None:
         )
 
     with col4:
-        # Calculate forecast accuracy (mock data)
-        accuracy = 85.2  # This would come from historical forecast vs actual
+        # Backtest: the forecast method re-run on the most recent days and compared to actuals
+        accuracy = forecast.get("backtest_accuracy")
         st.metric(
-            "Forecast Accuracy", f"{accuracy}%", help="Historical forecast accuracy"
+            "Forecast Accuracy",
+            "n/a" if accuracy is None else format_percentage(accuracy),
+            help="Backtest of the trend forecast on the latest days (needs 9+ days of data)",
         )
 
     # Forecast visualization
@@ -419,12 +421,12 @@ def render_profit_analysis(revenue_data: Dict[str, Any]) -> None:
             )
 
         with col4:
-            # Profit growth (mock calculation)
-            profit_growth = 0.12  # This would come from period comparison
+            # Profit versus the previous period of equal length
+            profit_growth = summary.get("profit_growth") or 0
             st.metric(
                 "Profit Growth",
                 format_percentage(profit_growth),
-                help="Profit growth rate",
+                help="Profit growth versus the previous period of equal length",
             )
 
     # Profit trend analysis

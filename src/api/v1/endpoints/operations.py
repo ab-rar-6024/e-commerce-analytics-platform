@@ -1,27 +1,30 @@
 """
 Operational monitoring endpoints for API v1.
 
-Provides the operational dashboard with fraud-model health, data quality,
-alerting, performance and streaming-pipeline metrics. Like the other
-"enhanced" endpoints, these generate representative sample data until they
-are wired to the monitoring backends.
+Fraud-model quality, data quality, alerts, performance and pipeline freshness,
+measured from the database, this machine and the API's own request metrics
+(see src/api/repositories/operations.py). Components that are not deployed are
+reported as unavailable rather than simulated.
 """
 
-import random
 from datetime import datetime, timedelta
 from typing import Any, Dict
 
 from fastapi import APIRouter, Depends, Query
+from sqlalchemy import func, select
+from sqlalchemy.orm import Session
+
+from src.database.models import FraudAlert, Order, UserEvent
 
 from ...auth.dependencies import get_current_active_user, require_permission
 from ...auth.models import Permission, User
+from ...dependencies import get_database_session
+from ...repositories import fraud as fraud_repo
+from ...repositories import operations as ops
+from ...repositories.common import data_now
 
 router = APIRouter()
-
-
-def _iso_ago(**delta: float) -> str:
-    """ISO timestamp for `now - timedelta(**delta)`."""
-    return (datetime.now() - timedelta(**delta)).isoformat()
+READ = Depends(require_permission(Permission.READ_ANALYTICS))
 
 
 @router.get("/fraud-monitoring", summary="Get fraud detection operational metrics")
@@ -29,32 +32,25 @@ async def get_fraud_monitoring(
     time_range: str = Query(default="24h", description="Time range: 1h, 24h, 7d"),
     include_alerts: bool = Query(default=True, description="Include alert counts"),
     current_user: User = Depends(get_current_active_user),
-    _: None = Depends(require_permission(Permission.READ_ANALYTICS)),
+    _: None = READ,
+    db: Session = Depends(get_database_session),
 ) -> Dict[str, Any]:
-    """Fraud monitoring metrics and per-model health."""
-    models = [
-        ("Rules Engine", 0.91),
-        ("Isolation Forest", 0.89),
-        ("Gradient Boosting", 0.94),
-        ("Neural Network", 0.92),
-    ]
+    dashboard = fraud_repo.fraud_dashboard(db, time_range)
+    models = fraud_repo.detection_models(db, "90d")
     return {
-        "time_range": time_range,
-        "generated_at": datetime.now().isoformat(),
+        "time_range": time_range, "generated_at": datetime.utcnow().isoformat(),
         "monitoring": {
-            "alerts_last_24h": random.randint(60, 140) if include_alerts else 0,
-            "false_positive_rate": round(random.uniform(0.08, 0.16), 3),
+            "alerts_last_24h": fraud_repo.fraud_dashboard(db, "24h")["alerts"]["total"] if include_alerts else 0,
+            "alerts_in_range": dashboard["alerts"]["total"],
+            "false_positive_rate": dashboard["overview"]["false_positive_rate"],
         },
         "model_health": {
-            "ensemble_accuracy": round(random.uniform(0.92, 0.95), 3),
-            "avg_detection_latency_ms": random.randint(90, 160),
+            "ensemble_accuracy": models["ensemble_performance"]["combined_precision"],
+            "ensemble_recall": models["ensemble_performance"]["combined_recall"],
+            "avg_detection_latency_ms": dashboard["performance"]["detection_latency_ms"],
             "individual_models": [
-                {
-                    "name": name,
-                    "accuracy": round(base + random.uniform(-0.02, 0.02), 3),
-                    "last_trained": _iso_ago(days=random.randint(1, 10)),
-                }
-                for name, base in models
+                {"name": m["name"], "accuracy": m["precision"], "recall": m["recall"], "last_trained": None}
+                for m in models["models"]
             ],
         },
     }
@@ -65,147 +61,118 @@ async def get_data_quality(
     time_range: str = Query(default="24h", description="Time range: 1h, 24h, 7d"),
     include_anomalies: bool = Query(default=True, description="Include anomalies"),
     current_user: User = Depends(get_current_active_user),
-    _: None = Depends(require_permission(Permission.READ_ANALYTICS)),
+    _: None = READ,
+    db: Session = Depends(get_database_session),
 ) -> Dict[str, Any]:
-    """Data quality scores, pipeline health and issue distribution."""
-    pipelines = [
-        ("transactions-ingest", "healthy"),
-        ("user-behavior-ingest", "healthy"),
-        ("product-catalog-sync", "healthy"),
-        ("delta-lake-compaction", "degraded"),
-    ]
+    q = ops.data_quality(db)
+    now = datetime.utcnow()
+    pipelines = []
+    for name, v in q["freshness"].items():
+        rows = q["tables"].get(name, 0)
+        pipelines.append({
+            "name": name, "status": "stale" if v["stale"] else "healthy", "last_run": v["latest"],
+            "lag_seconds": v["lag_seconds"], "success_rate": q["accuracy_score"], "avg_duration_minutes": None,
+            "records_processed": rows,
+        })
+    alerts = []
+    if include_anomalies:
+        alerts = [{"severity": "warning", "message": f"{k.replace('_', ' ')}: {n} rows", "detected_at": now.isoformat()}
+                  for k, n in q["checks"].items() if n]
     return {
-        "time_range": time_range,
-        "generated_at": datetime.now().isoformat(),
+        "time_range": time_range, "generated_at": now.isoformat(),
         "overview": {
-            "overall_quality_score": round(random.uniform(0.94, 0.98), 3),
-            "completeness_score": round(random.uniform(0.96, 0.99), 3),
-            "accuracy_score": round(random.uniform(0.95, 0.99), 3),
-            "freshness_violations": random.randint(0, 4),
+            "overall_quality_score": q["overall_quality_score"], "completeness_score": q["completeness_score"],
+            "accuracy_score": q["accuracy_score"], "freshness_violations": q["freshness_violations"],
         },
-        "alerts": [],
-        "pipeline_health": [
-            {
-                "name": name,
-                "status": status,
-                "last_run": _iso_ago(minutes=random.randint(1, 45)),
-                "success_rate": round(random.uniform(0.97, 1.0), 3),
-                "avg_duration_minutes": round(random.uniform(2, 18), 1),
-                "records_processed": random.randint(50_000, 2_000_000),
-            }
-            for name, status in pipelines
-        ],
-        "issue_distribution": {
-            "null_values": random.randint(20, 120),
-            "schema_drift": random.randint(0, 12),
-            "duplicates": random.randint(10, 80),
-            "out_of_range": random.randint(5, 40),
-        },
+        "alerts": alerts, "pipeline_health": pipelines,
+        "issue_distribution": {k: n for k, n in q["checks"].items() if n},
+        "checks": q["checks"], "rows_tested": q["rows_tested"],
     }
 
 
 @router.get("/alerts", summary="Get operational alerts")
 async def get_operational_alerts(
     status: str = Query(default="active", description="Alert status filter"),
-    priority: str = Query(default="all", description="Priority filter"),
+    priority: str = Query(default="all", description="Severity filter: critical, warning, info, all"),
     page: int = Query(default=1, ge=1),
     size: int = Query(default=50, ge=1, le=200),
     current_user: User = Depends(get_current_active_user),
-    _: None = Depends(require_permission(Permission.READ_ANALYTICS)),
+    _: None = READ,
+    db: Session = Depends(get_database_session),
 ) -> Dict[str, Any]:
-    """Operational alert summary and recent alerts."""
-    samples = [
-        ("critical", "system", "Spark executor lost on worker-3"),
-        ("warning", "performance", "API p95 latency above 400ms"),
-        ("warning", "system", "Kafka consumer lag growing on transactions topic"),
-        ("info", "fraud", "Fraud model retrained and promoted"),
-        ("warning", "performance", "Database connection pool at 85%"),
-        ("info", "system", "Delta Lake compaction completed"),
-    ]
-    recent = [
-        {
-            "timestamp": _iso_ago(minutes=i * random.randint(8, 25)),
-            "severity": severity,
-            "category": category,
-            "message": message,
-            "status": random.choice(["active", "acknowledged", "resolved"]),
-            "assigned_to": random.choice(["oncall-1", "oncall-2", None]),
-        }
-        for i, (severity, category, message) in enumerate(samples, start=1)
-    ]
-    if status != "all":
-        recent = [a for a in recent if a["status"] == status] or recent[:2]
+    alerts = ops.operational_alerts(db)
     if priority != "all":
-        recent = [a for a in recent if a["severity"] == priority] or recent[:2]
+        alerts = [a for a in alerts if a["severity"] == priority]
     start = (page - 1) * size
     return {
         "summary": {
-            "critical": sum(a["severity"] == "critical" for a in recent),
-            "warning": sum(a["severity"] == "warning" for a in recent),
-            "resolved_last_24h": random.randint(10, 40),
-            "avg_resolution_time_minutes": round(random.uniform(12, 55), 1),
+            "critical": sum(a["severity"] == "critical" for a in alerts),
+            "warning": sum(a["severity"] == "warning" for a in alerts),
+            "info": sum(a["severity"] == "info" for a in alerts),
+            "resolved_last_24h": None, "avg_resolution_time_minutes": None,
         },
         "alerts_by_category": {"system": [], "performance": [], "fraud": []},
-        "recent_alerts": recent[start : start + size],
+        "recent_alerts": alerts[start : start + size],
     }
 
 
-@router.get("/performance", summary="Get performance benchmarks")
+@router.get("/performance", summary="Get performance metrics")
 async def get_operational_performance(
     benchmark_type: str = Query(default="all", description="Benchmark type"),
-    time_range: str = Query(default="24h", description="Time range: 1h, 24h, 7d"),
+    time_range: str = Query(default="24h", description="Time range"),
     current_user: User = Depends(get_current_active_user),
-    _: None = Depends(require_permission(Permission.READ_ANALYTICS)),
+    _: None = READ,
+    db: Session = Depends(get_database_session),
 ) -> Dict[str, Any]:
-    """Headline latency, lag and job metrics."""
+    api, dbh = ops.api_metrics(), ops.database_health(db, 5)
     return {
-        "benchmark_type": benchmark_type,
-        "time_range": time_range,
-        "generated_at": datetime.now().isoformat(),
+        "benchmark_type": benchmark_type, "time_range": time_range, "generated_at": datetime.utcnow().isoformat(),
         "metrics": {
-            "api_response_p95_ms": random.randint(120, 380),
-            "database_query_p95_ms": random.randint(30, 140),
-            "kafka_consumer_lag": random.randint(50, 1500),
-            "spark_active_jobs": random.randint(2, 12),
+            "api_response_p95_ms": api["p95_ms"], "database_query_p95_ms": dbh["latency_p95_ms"],
+            "kafka_consumer_lag": None, "spark_active_jobs": None,
         },
+        "api": {k: api[k] for k in ("total_requests", "requests_per_second", "avg_ms", "p50_ms", "p90_ms", "p95_ms", "p99_ms",
+                                     "error_rate_4xx", "error_rate_5xx", "sla_compliance")},
+        "database": dbh,
+        "endpoints": ops.endpoint_stats(),
+        "notes": "API figures cover requests since the API process started; Kafka and Spark are not configured.",
     }
 
 
-@router.get("/streaming-health", summary="Get streaming pipeline health")
+@router.get("/streaming-health", summary="Get data pipeline freshness")
 async def get_streaming_health(
-    include_lag: bool = Query(default=True, description="Include consumer lag"),
+    include_lag: bool = Query(default=True, description="Include data lag"),
     include_throughput: bool = Query(default=True, description="Include throughput"),
     current_user: User = Depends(get_current_active_user),
-    _: None = Depends(require_permission(Permission.READ_ANALYTICS)),
+    _: None = READ,
+    db: Session = Depends(get_database_session),
 ) -> Dict[str, Any]:
-    """Pipeline-level metrics and per-topic health."""
-    topics = [
-        ("transactions", 6),
-        ("user-events", 8),
-        ("product-updates", 3),
-        ("fraud-alerts", 2),
-    ]
+    """Freshness and volume of the tables that stand in for streaming topics."""
+    now = data_now(db)
+    q = ops.data_quality(db)
+    since = now - timedelta(minutes=15)
+    counts = {
+        "orders": db.execute(select(func.count()).select_from(Order).where(Order.order_date >= since)).scalar() or 0,
+        "user_events": db.execute(select(func.count()).select_from(UserEvent).where(UserEvent.event_timestamp >= since)).scalar() or 0,
+        "fraud_alerts": db.execute(select(func.count()).select_from(FraudAlert).where(FraudAlert.created_at >= since)).scalar() or 0,
+    }
+    topics = []
+    for name, n in counts.items():
+        fr = q["freshness"][name]
+        topics.append({
+            "name": name, "status": "stale" if fr["stale"] else "healthy",
+            "messages_per_second": round(n / 900, 4) if include_throughput else None,
+            "consumer_lag": None, "partition_count": None, "last_message_time": fr["latest"],
+            "lag_seconds": fr["lag_seconds"] if include_lag else None,
+        })
+    lags = [t["lag_seconds"] for t in topics if t["lag_seconds"] is not None]
     return {
-        "generated_at": datetime.now().isoformat(),
+        "generated_at": datetime.utcnow().isoformat(),
         "pipeline_metrics": {
-            "messages_per_second": random.randint(4_000, 12_000)
-            if include_throughput
-            else 0,
-            "processing_lag_seconds": round(random.uniform(0.5, 6.0), 1)
-            if include_lag
-            else 0,
-            "error_rate": round(random.uniform(0.0005, 0.01), 4),
-            "active_consumers": random.randint(6, 16),
+            "messages_per_second": round(sum(counts.values()) / 900, 4) if include_throughput else None,
+            "processing_lag_seconds": max(lags) if lags and include_lag else None,
+            "error_rate": round(1 - q["accuracy_score"], 4), "active_consumers": None,
         },
-        "topic_health": [
-            {
-                "name": name,
-                "status": random.choice(["healthy", "healthy", "degraded"]),
-                "messages_per_second": random.randint(300, 4_000),
-                "consumer_lag": random.randint(0, 900),
-                "partition_count": partitions,
-                "last_message_time": _iso_ago(seconds=random.randint(1, 20)),
-            }
-            for name, partitions in topics
-        ],
+        "topic_health": topics,
+        "notes": "Kafka is not configured; topics here are database tables and lag is the age of the newest row.",
     }
