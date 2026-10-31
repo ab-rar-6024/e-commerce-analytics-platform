@@ -73,6 +73,25 @@ $env:SPARK_LOCAL_IP = "127.0.0.1"
 python -m pytest tests/unit --no-cov --timeout=300
 ```
 
+### 🌐 Running the website locally (no Docker)
+
+The dashboard (Streamlit) talks to the FastAPI backend. The API normally requires PostgreSQL at
+startup; for a quick local run you can point it at a throwaway SQLite file instead. The dashboard
+pages are fed by the API's built-in sample-data endpoints, so no data needs to be loaded.
+
+```powershell
+# Terminal 1 - API on http://127.0.0.1:8000 (docs at /docs)
+$env:ECAP_DATABASE_URL = "sqlite:///./ecap_local.db"
+python -m uvicorn src.api.main:app --host 127.0.0.1 --port 8000
+
+# Terminal 2 - dashboard on http://localhost:8501
+python -m streamlit run src/dashboard/main.py --server.port 8501
+```
+
+Log in to the dashboard with `admin` / `admin123`. The dashboard calls the API with its own service
+account (the API's development user, `admin` / `secret`); override it with `DASHBOARD_API_USERNAME`
+and `DASHBOARD_API_PASSWORD`, and the API URL with `DASHBOARD_API_BASE_URL`.
+
 Tip: `pyspark` is a ~300 MB download; if `poetry install` is interrupted, run
 `pip install pyspark==3.4.4` and then `poetry install` again.
 
