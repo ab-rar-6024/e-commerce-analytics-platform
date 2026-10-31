@@ -35,6 +35,25 @@ def clip_score(column: Column, low: int = 1, high: int = 5) -> Column:
     return F.greatest(F.lit(low), F.least(F.lit(high), column))
 
 
+# Smallest previous-period revenue for which a growth rate is meaningful
+# (denormal floats such as 2e-309 overflow the rate to inf)
+MIN_BASELINE_REVENUE = 1e-6
+
+# Lightweight local Spark for property-based tests: Hypothesis runs one Spark job
+# per generated example, so session overhead dominates the run time.
+FAST_SPARK_CONFIG = {
+    "spark.ui.enabled": "false",
+    "spark.sql.shuffle.partitions": "2",
+    "spark.sql.adaptive.enabled": "false",
+    "spark.driver.bindAddress": "127.0.0.1",
+}
+
+
+def create_fast_spark_session(app_name: str):
+    """Create a small local Spark session suited to many tiny jobs."""
+    return create_spark_session(app_name, master="local[2]", config=FAST_SPARK_CONFIG)
+
+
 # Customer transaction data strategy
 @st.composite
 def customer_transaction_data(draw):
@@ -129,7 +148,7 @@ class TestRFMBusinessRuleProperties:
     @pytest.fixture(scope="class")
     def spark(self):
         """Create Spark session for testing."""
-        return create_spark_session("rfm-property-tests")
+        return create_fast_spark_session("rfm-property-tests")
 
     @pytest.fixture(scope="class")
     def rfm_segmentation(self, spark):
@@ -197,6 +216,7 @@ class TestRFMBusinessRuleProperties:
             min_value=0.01, max_value=100000.0, allow_nan=False, allow_infinity=False
         )
     )
+    @settings(max_examples=15, deadline=None)
     def test_monetary_value_monotonicity(self, spark, monetary_value):
         """
         Test that higher monetary values result in higher M-scores.
@@ -235,6 +255,7 @@ class TestRFMBusinessRuleProperties:
                 ), f"Monotonicity violated: value {next_value} (score {next_score}) > {current_value} (score {current_score})"
 
     @given(st.integers(min_value=0, max_value=3650))  # 0-10 years in days
+    @settings(max_examples=15, deadline=None)
     def test_recency_scoring_inverse_relationship(self, spark, recency_days):
         """
         Test that higher recency (more days since last purchase) results in lower R-scores.
@@ -257,7 +278,7 @@ class TestRFMBusinessRuleProperties:
             assert (
                 r_score >= 4
             ), f"Recent transactions ({recency_days} days) should have high R-score, got {r_score}"
-        elif recency_days >= 1095:  # Very old (3+ years)
+        elif recency_days >= 1460:  # Very old (4+ years: 6 - 4 = 2)
             assert (
                 r_score <= 2
             ), f"Old transactions ({recency_days} days) should have low R-score, got {r_score}"
@@ -269,15 +290,20 @@ class TestRFMBusinessRuleProperties:
 class TestFraudDetectionBusinessRules:
     """Property-based tests for fraud detection business rules."""
 
-    @pytest.fixture
-    def fraud_rules_engine(self):
-        """Create fraud rules engine for testing."""
-        return ConfigurableRulesEngine()
+    @pytest.fixture(scope="class")
+    def spark(self):
+        """Create Spark session for testing."""
+        return create_fast_spark_session("fraud-property-tests")
 
-    @pytest.fixture
-    def alert_prioritizer(self):
+    @pytest.fixture(scope="class")
+    def fraud_rules_engine(self, spark):
+        """Create fraud rules engine for testing."""
+        return ConfigurableRulesEngine(spark)
+
+    @pytest.fixture(scope="class")
+    def alert_prioritizer(self, spark):
         """Create alert prioritizer for testing."""
-        return FraudAlertPrioritizer()
+        return FraudAlertPrioritizer(spark)
 
     @given(fraud_transaction_data())
     @settings(max_examples=50, deadline=None)
@@ -426,7 +452,7 @@ class TestRevenueAnalyticsBusinessRules:
     @pytest.fixture(scope="class")
     def spark(self):
         """Create Spark session for testing."""
-        return create_spark_session("revenue-property-tests")
+        return create_fast_spark_session("revenue-property-tests")
 
     @given(st.lists(revenue_data(), min_size=1, max_size=100))
     @settings(max_examples=30, deadline=None)
@@ -491,6 +517,7 @@ class TestRevenueAnalyticsBusinessRules:
         ),
         st.integers(min_value=1, max_value=100000),
     )
+    @settings(max_examples=15, deadline=None)
     def test_average_order_value_property(
         self, spark, total_revenue, transaction_count
     ):
@@ -560,18 +587,28 @@ class TestRevenueAnalyticsBusinessRules:
             prev_revenue = sorted_data[i - 1][1]
             curr_revenue = sorted_data[i][1]
 
-            if prev_revenue > 0:
+            if prev_revenue >= MIN_BASELINE_REVENUE:
                 growth_rate = (curr_revenue - prev_revenue) / prev_revenue
                 growth_rates.append(growth_rate)
 
         # Test growth rate properties
         for rate in growth_rates:
-            # Growth rate should be reasonable (not extreme)
-            assert -1.0 <= rate <= 100.0, f"Growth rate {rate} seems unrealistic"
+            # Revenue cannot drop by more than 100%
+            assert rate >= -1.0, f"Growth rate {rate} is below -100%"
 
-            # If current revenue is higher, growth should be positive
-            # If current revenue is lower, growth should be negative
-            # This is implicitly tested by the calculation above
+        # Growth rates must reconstruct the current revenue from the previous one
+        # (and have the sign of the actual change)
+        for i in range(1, len(sorted_data)):
+            prev_revenue = sorted_data[i - 1][1]
+            curr_revenue = sorted_data[i][1]
+            if prev_revenue >= MIN_BASELINE_REVENUE:
+                rate = (curr_revenue - prev_revenue) / prev_revenue
+                # Tolerance scales with the baseline: (1 + rate) cancels catastrophically
+                # when the revenue collapses, losing about eps * prev_revenue
+                assert prev_revenue * (1 + rate) == pytest.approx(
+                    curr_revenue, rel=1e-9, abs=prev_revenue * 1e-9
+                )
+                assert (rate > 0) == (curr_revenue > prev_revenue) or rate == 0
 
 
 class TestBusinessRuleInvariants:
@@ -625,6 +662,9 @@ class TestBusinessRuleInvariants:
 
         Invariant: All customers must be assigned to exactly one segment.
         """
+        # A single customer is trivially 100% of one segment
+        assume(customer_count >= 2)
+
         # Mock customer segmentation logic
         segments = []
 

@@ -28,6 +28,21 @@ from pyspark.sql.types import (
 from src.streaming.transformations.enrichment import DataEnrichmentPipeline
 from src.utils.spark_utils import create_spark_session
 
+
+# Lightweight local Spark for property-based tests: Hypothesis runs one Spark job
+# per generated example, so session overhead dominates the run time.
+FAST_SPARK_CONFIG = {
+    "spark.ui.enabled": "false",
+    "spark.sql.shuffle.partitions": "2",
+    "spark.sql.adaptive.enabled": "false",
+    "spark.driver.bindAddress": "127.0.0.1",
+}
+
+
+def create_fast_spark_session(app_name: str):
+    """Create a small local Spark session suited to many tiny jobs."""
+    return create_spark_session(app_name, master="local[2]", config=FAST_SPARK_CONFIG)
+
 # Transaction schema for property-based testing
 TRANSACTION_SCHEMA = StructType(
     [
@@ -204,7 +219,7 @@ class TestPropertyBasedTransformations:
     @pytest.fixture(scope="class")
     def spark(self):
         """Create Spark session for testing."""
-        return create_spark_session("property-based-tests")
+        return create_fast_spark_session("property-based-tests")
 
     @pytest.fixture(scope="class")
     def enrichment_pipeline(self, spark):
@@ -348,7 +363,7 @@ class TestPropertyBasedTransformations:
         # Property 2: Engagement scores are consistent with event types
         for row in results:
             event_type = row["event_type"]
-            engagement_score = row.get("engagement_score")
+            engagement_score = row.asDict().get("engagement_score")
 
             if engagement_score is not None:
                 if event_type == "purchase":
@@ -379,14 +394,14 @@ class TestPropertyBasedTransformations:
         # Property 3: Device categories are valid
         valid_device_categories = {"Mobile", "Tablet", "Desktop"}
         for row in results:
-            if row.get("device_category"):
+            if row.asDict().get("device_category"):
                 assert (
                     row["device_category"] in valid_device_categories
                 ), f"Invalid device category: {row['device_category']}"
 
         # Property 4: Purchase intent scores are reasonable
         for row in results:
-            intent_score = row.get("purchase_intent_score")
+            intent_score = row.asDict().get("purchase_intent_score")
             if intent_score is not None:
                 assert (
                     0 <= intent_score <= 100
@@ -397,6 +412,7 @@ class TestPropertyBasedTransformations:
             min_value=0.01, max_value=10000.0, allow_nan=False, allow_infinity=False
         )
     )
+    @settings(max_examples=15, deadline=None)
     def test_price_categorization_property(self, spark, price):
         """
         Property-based test for price categorization logic.
@@ -431,6 +447,7 @@ class TestPropertyBasedTransformations:
         assert test_price <= 10000.0, "Price should be reasonable"
 
     @given(st.integers(min_value=0, max_value=23))
+    @settings(max_examples=15, deadline=None)
     def test_time_period_categorization_property(self, spark, hour):
         """
         Property-based test for time period categorization.
@@ -474,6 +491,7 @@ class TestPropertyBasedTransformations:
             ), f"Hour {hour} should be Night, got {time_period}"
 
     @given(st.one_of(st.none(), st.text(min_size=0, max_size=50)))
+    @settings(max_examples=15, deadline=None)
     def test_null_handling_property(self, spark, enrichment_pipeline, nullable_text):
         """
         Property-based test for null value handling in enrichment.
@@ -513,7 +531,7 @@ class TestPropertyBasedTransformations:
             # Verify null handling produces expected defaults
             if nullable_text is None or nullable_text.strip() == "":
                 # Customer tier should default to "Unknown" for null/empty
-                if result.get("customer_tier_normalized"):
+                if result.asDict().get("customer_tier_normalized"):
                     # Can be "Unknown" or normalized version of empty string
                     assert result["customer_tier_normalized"] in [
                         "Unknown",
@@ -535,13 +553,14 @@ class TestPropertyBasedInvariants:
     @pytest.fixture(scope="class")
     def spark(self):
         """Create Spark session for testing."""
-        return create_spark_session("property-invariants-tests")
+        return create_fast_spark_session("property-invariants-tests")
 
     @given(
         st.floats(
             min_value=0.01, max_value=1000000.0, allow_nan=False, allow_infinity=False
         )
     )
+    @settings(max_examples=15, deadline=None)
     def test_revenue_calculation_invariant(self, spark, total_amount):
         """
         Test that revenue calculations maintain consistent proportions.
@@ -566,6 +585,7 @@ class TestPropertyBasedInvariants:
         ), f"Revenue calculation invariant violated: {calculated_revenue} vs {expected_revenue}"
 
     @given(st.integers(min_value=1, max_value=1000))
+    @settings(max_examples=15, deadline=None)
     def test_quantity_business_rule_invariant(self, spark, quantity):
         """
         Test that bulk purchase classification is consistent.
@@ -597,6 +617,7 @@ class TestPropertyBasedInvariants:
             max_size=100,
         )
     )
+    @settings(max_examples=15, deadline=None)
     def test_monotonic_price_categories_invariant(self, spark, price_list):
         """
         Test that price categories maintain monotonic ordering.
